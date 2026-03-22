@@ -7,7 +7,13 @@ import streamlit as st
 
 from agent_config.schema import AgentConfig, ProviderConfig, SIPProvisionConfig, WorkerConfig
 from agent_config.store import list_agent_configs
-from backend_service import create_agent_backend, provision_sip_backend, serialize_result
+from backend_service import (
+    create_agent_backend,
+    is_process_running,
+    provision_sip_backend,
+    serialize_result,
+    start_agent_backend,
+)
 
 
 def parse_json_dict(raw: str, label: str) -> dict:
@@ -29,6 +35,9 @@ def validate_e164(phone_number: str) -> str:
 st.set_page_config(page_title="LiveKit Agent Builder", layout="centered")
 st.title("LiveKit Agent Builder")
 st.caption("Create a generic agent config, then provision SIP separately if needed.")
+
+if "started_agents" not in st.session_state:
+    st.session_state["started_agents"] = {}
 
 with st.form("agent_form"):
     name = st.text_input("Agent name", placeholder="sales_agent_india")
@@ -147,6 +156,73 @@ if sip_submitted:
         st.code(json.dumps(result, indent=2), language="json")
     except Exception as exc:
         st.error(str(exc))
+
+st.divider()
+st.subheader("Start Agent")
+st.caption(
+    "Launch a saved agent in dev or production mode from the UI. "
+    "This runs the same command pattern as `python create_agent.py dev` or `start`."
+)
+saved_agent_names = [saved.name for saved in list_agent_configs()]
+with st.form("start_agent_form"):
+    if saved_agent_names:
+        start_agent_name = st.selectbox(
+            "Saved agent",
+            options=saved_agent_names,
+            index=0,
+        )
+    else:
+        st.info("No saved agents yet. Create an agent config first.")
+        start_agent_name = ""
+    start_mode = st.selectbox("Mode", options=["dev", "start"], index=0)
+    start_submitted = st.form_submit_button("Start agent")
+
+if start_submitted:
+    try:
+        if not start_agent_name:
+            raise ValueError("Create an agent config before starting the agent.")
+
+        result = start_agent_backend(start_agent_name, start_mode)
+        st.session_state["started_agents"][start_agent_name] = {
+            "pid": result.pid,
+            "mode": start_mode,
+            "log_path": result.log_path,
+            "command": result.command,
+        }
+        if result.started:
+            st.success(result.message)
+        else:
+            st.error(result.message)
+    except Exception as exc:
+        st.error(str(exc))
+
+if st.session_state["started_agents"]:
+    st.write("Running agent status")
+    for agent_name, details in st.session_state["started_agents"].items():
+        pid = details.get("pid")
+        running = bool(pid) and is_process_running(pid)
+        if running:
+            st.success(
+                f"{agent_name} is started successfully in {details['mode']} mode and ready."
+            )
+        else:
+            st.warning(
+                f"{agent_name} is not currently running. Check logs at {details['log_path']}."
+            )
+        st.code(
+            json.dumps(
+                {
+                    "agent_name": agent_name,
+                    "pid": pid,
+                    "mode": details["mode"],
+                    "running": running,
+                    "log_path": details["log_path"],
+                    "command": details["command"],
+                },
+                indent=2,
+            ),
+            language="json",
+        )
 
 st.divider()
 st.subheader("Saved agents")
