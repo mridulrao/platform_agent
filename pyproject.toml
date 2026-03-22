@@ -1,0 +1,20 @@
+[project]
+name = "voice-agents"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.txt"
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp>=3.11.0",
+    "livekit>=1.0.8",
+    "livekit-agents>=1.2.2",
+    "livekit-plugins-deepgram>=1.2.2",
+    "livekit-plugins-google>=1.2.2",
+    "livekit-plugins-noise-cancellation>=0.2.5",
+    "livekit-plugins-openai>=1.2.2",
+    "livekit-plugins-silero>=1.2.2",
+    "pydantic>=2.10.0",
+    "python-dotenv>=1.0.1",
+    "requests>=2.32.0",
+    "streamlit>=1.43.0",
+]
