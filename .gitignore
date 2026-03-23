@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Local environment files
+.env
+.env.local
+
+.run_logs

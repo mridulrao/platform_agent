@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from livekit.agents import AgentSession, AutoSubscribe, JobContext, JobProcess, RoomInputOptions
-from livekit.plugins import noise_cancellation, silero
+from livekit.plugins import noise_cancellation
 
 from agent_config.schema import AgentConfig
 from livekit_agents.base_agent import BaseAgent
-from livekit_agents.factory import build_llm, build_stt, build_tts
+from livekit_agents.factory import build_llm, build_stt, build_tts, build_vad
 
 
 logger = logging.getLogger("configurable-livekit-agent")
@@ -22,13 +22,7 @@ class SessionUserData:
 
 
 def prewarm(proc: JobProcess) -> None:
-    proc.userdata["vad"] = silero.VAD.load(
-        min_speech_duration=0.07,
-        min_silence_duration=0.5,
-        activation_threshold=0.5,
-        force_cpu=True,
-        sample_rate=16000,
-    )
+    proc.userdata["vad_ready"] = True
 
 
 def load_tools(tool_paths: list[str]) -> list[Any]:
@@ -69,7 +63,7 @@ async def run_agent_session(ctx: JobContext, config: AgentConfig) -> None:
     session = AgentSession(userdata=SessionUserData(ctx=ctx))
     agent = ConfigurableVoiceAgent(
         config=config,
-        vad_instance=ctx.proc.userdata["vad"],
+        vad_instance=build_vad(config),
     )
 
     room_input_options = None

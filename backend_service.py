@@ -8,6 +8,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from agent_config.schema import AgentConfig, SIPProvisionConfig
 from agent_config.store import save_agent_config
 from livekit_trunks.provision import provision_inbound_sip_for_agent
@@ -15,6 +17,10 @@ from livekit_trunks.provision import provision_inbound_sip_for_agent
 
 ROOT = Path(__file__).resolve().parent
 RUN_LOG_DIR = ROOT / ".run_logs"
+
+# Load local environment for Streamlit/UI-driven actions such as SIP provisioning.
+load_dotenv(ROOT / ".env")
+load_dotenv(ROOT / ".env.local", override=False)
 
 
 @dataclass
@@ -35,10 +41,9 @@ class StartAgentResult:
 def build_worker_command(agent_name: str, mode: str = "dev") -> list[str]:
     return [
         sys.executable,
-        str(ROOT / "livekit_agents" / "create_agent.py"),
+        "-m",
+        "livekit_agents.create_agent",
         mode,
-        "--agent-name",
-        agent_name,
     ]
 
 

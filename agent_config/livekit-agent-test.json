@@ -1,0 +1,53 @@
+{
+  "name": "livekit-agent-test",
+  "system_prompt": "Helpful Agent",
+  "llm": {
+    "provider": "azure_openai",
+    "model": "gpt-4.1-mini",
+    "kwargs": {
+      "azure_deployment": "gpt-4.1-mini",
+      "api_version": "2024-10-01-preview"
+    }
+  },
+  "stt": {
+    "provider": "deepgram",
+    "model": "nova-3",
+    "kwargs": {
+      "language": "en-IN",
+      "detect_language": false,
+      "interim_results": true
+    }
+  },
+  "tts": {
+    "provider": "elevenlabs",
+    "model": "eleven_flash_v2_5",
+    "kwargs": {
+      "voice_id": "qqlNUIWhCCU86MRWBcOe"
+    }
+  },
+  "vad": {
+    "provider": "silero",
+    "kwargs": {
+      "min_speech_duration": 0.07,
+      "min_silence_duration": 0.5,
+      "activation_threshold": 0.5,
+      "force_cpu": true,
+      "sample_rate": 16000
+    }
+  },
+  "tools": [
+    "livekit_agents_tools.session_tools.end_call"
+  ],
+  "worker": {
+    "agent_name": "livekit-agent-test",
+    "job_memory_warn_mb": 2000,
+    "shutdown_process_timeout": 80.0,
+    "initialize_process_timeout": 540,
+    "num_idle_processes": 1,
+    "port": 8082
+  },
+  "session": {
+    "enable_telephony_noise_cancellation": true,
+    "kwargs": {}
+  }
+}

@@ -4,9 +4,15 @@ import argparse
 import json
 import logging
 import os
+import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 from livekit.agents import JobContext, WorkerOptions, cli
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from agent_config.store import load_agent_config
 from livekit_agents.runtime import prewarm, run_agent_session
@@ -49,9 +55,10 @@ async def entrypoint(ctx: JobContext) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--agent-name", dest="agent_name")
-    args, _ = parser.parse_known_args()
+    args, remaining = parser.parse_known_args()
     if args.agent_name:
         os.environ["TARGET_AGENT_NAME"] = args.agent_name
+    sys.argv = [sys.argv[0], *remaining]
 
     target_agent_name = os.getenv("TARGET_AGENT_NAME", "configurable_agent")
     config = load_agent_config(target_agent_name)

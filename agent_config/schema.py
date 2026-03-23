@@ -25,12 +25,18 @@ class SessionConfig(BaseModel):
     kwargs: dict[str, Any] = Field(default_factory=dict)
 
 
+class VADConfig(BaseModel):
+    provider: str = "silero"
+    kwargs: dict[str, Any] = Field(default_factory=dict)
+
+
 class AgentConfig(BaseModel):
     name: str = Field(..., min_length=1)
     system_prompt: str = Field(..., min_length=1)
     llm: ProviderConfig
     stt: ProviderConfig
     tts: ProviderConfig
+    vad: VADConfig = Field(default_factory=VADConfig)
     tools: list[str] = Field(default_factory=list)
     worker: WorkerConfig = Field(default_factory=WorkerConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
