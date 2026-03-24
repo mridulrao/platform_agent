@@ -48,21 +48,7 @@ flowchart LR
 
 ## Environment
 
-Common runtime variables:
-
-- `DATABASE_URL`
-- `DIRECT_URL` if available
-- `LIVEKIT_URL`
-- `LIVEKIT_API_KEY`
-- `LIVEKIT_API_SECRET`
-- `AZURE_OPENAI_API_KEY`
-- `AZURE_OPENAI_ENDPOINT`
-- `OPENAI_API_VERSION`
-- `ELEVEN_API_KEY`
-- `DEEPGRAM_API_KEY`
-- `AGENT_WORKER_IMAGE`
-- `K8S_NAMESPACE`
-- `KUBECTL_BIN`
+Use [`.env.local`](/Users/mridulrao/Downloads/psuedo_desktop/platform_agent/.env.local) for local runtime configuration instead of passing variables individually in commands or duplicating them in docs.
 
 Generate Kubernetes runtime config from `.env`:
 
