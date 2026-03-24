@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 
 import streamlit as st
@@ -9,10 +10,11 @@ from agent_config.schema import AgentConfig, ProviderConfig, SIPProvisionConfig,
 from agent_config.store import list_agent_configs
 from backend_service import (
     create_agent_backend,
-    is_process_running,
+    delete_agent_deployment_backend,
+    deploy_agent_to_kubernetes_backend,
+    get_kubernetes_agent_status_backend,
     provision_sip_backend,
     serialize_result,
-    start_agent_backend,
 )
 
 
@@ -166,7 +168,9 @@ def validate_e164(phone_number: str) -> str:
 
 st.set_page_config(page_title="LiveKit Agent Builder", layout="centered")
 st.title("LiveKit Agent Builder")
-st.caption("Create a generic agent config, then provision SIP separately if needed.")
+st.caption("Create an agent config and deploy the worker to Kubernetes with the shared base image.")
+if "DATABASE_URL" in os.environ:
+    st.info("Agent configs will be written directly to the `voice_virtual_agents` table.")
 
 if "llm_provider" not in st.session_state:
     st.session_state["llm_provider"] = "azure_openai"
@@ -182,10 +186,15 @@ if "vad_provider" not in st.session_state:
     _sync_vad_kwargs()
 if "last_worker_command" not in st.session_state:
     st.session_state["last_worker_command"] = ""
-if "started_agents" not in st.session_state:
-    st.session_state["started_agents"] = {}
+if "kubernetes_agent_status" not in st.session_state:
+    st.session_state["kubernetes_agent_status"] = {}
 
 name = st.text_input("Agent name", placeholder="sales_agent_india")
+agent_phone_number = st.text_input(
+    "Agent phone number (E.164)",
+    placeholder="+14155550123",
+    help="Stored with the voice virtual agent record used by the worker deployment.",
+)
 system_prompt = st.text_area("System prompt", height=180)
 tools_raw = st.text_area(
     "Tool import paths (one per line)",
@@ -318,13 +327,13 @@ if submitted:
                 "kwargs": parse_json_dict(session_kwargs, "Session kwargs"),
             },
         )
-        result = create_agent_backend(config)
+        result = create_agent_backend(config, validate_e164(agent_phone_number))
         st.session_state["last_worker_command"] = (
             f"TARGET_AGENT_NAME={config.name} " + " ".join(result.worker_command)
         )
-        st.success("Agent config created successfully.")
+        st.success("Agent config saved successfully.")
         st.code(serialize_result(result), language="json")
-        st.caption("You can run the worker manually, or use the start button below.")
+        st.caption("Use the Agent Deployment section below when you want to deploy this agent.")
         st.code(st.session_state["last_worker_command"], language="bash")
     except Exception as exc:
         st.error(str(exc))
@@ -362,9 +371,9 @@ if sip_submitted:
         st.error(str(exc))
 
 st.divider()
-st.subheader("Run Agent")
+st.subheader("Agent Deployment")
 st.caption(
-    "Start the LiveKit worker as a separate process, or copy the terminal command."
+    "Deploy saved agents to Kubernetes here."
 )
 saved_agent_names = [saved.name for saved in list_agent_configs()]
 if saved_agent_names:
@@ -373,20 +382,32 @@ if saved_agent_names:
         options=saved_agent_names,
         index=0,
     )
-    run_mode = st.selectbox("Mode", options=["dev", "start"], index=0)
-    st.code(
-        f"TARGET_AGENT_NAME={run_agent_name} .venv/bin/python -m livekit_agents.create_agent {run_mode}",
-        language="bash",
-    )
-    if st.button("Start agent"):
+    if st.button("Deploy"):
         try:
-            result = start_agent_backend(run_agent_name, run_mode)
-            st.session_state["started_agents"][run_agent_name] = {
-                "pid": result.pid,
-                "mode": run_mode,
-                "log_path": result.log_path,
-                "command": [f"TARGET_AGENT_NAME={run_agent_name}", *result.command],
-            }
+            result = deploy_agent_to_kubernetes_backend(run_agent_name)
+            st.session_state["kubernetes_agent_status"][run_agent_name] = get_kubernetes_agent_status_backend(
+                run_agent_name
+            ).__dict__
+            st.success(f"{run_agent_name} deployed to Kubernetes.")
+            st.code(serialize_result(result), language="json")
+        except Exception as exc:
+            st.error(str(exc))
+    if st.button("Status"):
+        try:
+            result = get_kubernetes_agent_status_backend(run_agent_name)
+            st.session_state["kubernetes_agent_status"][run_agent_name] = result.__dict__
+            if result.deployed:
+                st.success(result.message)
+            else:
+                st.warning(result.message)
+        except Exception as exc:
+            st.error(str(exc))
+    if st.button("Stop"):
+        try:
+            result = delete_agent_deployment_backend(run_agent_name)
+            st.session_state["kubernetes_agent_status"][run_agent_name] = get_kubernetes_agent_status_backend(
+                run_agent_name
+            ).__dict__
             if result.started:
                 st.success(result.message)
             else:
@@ -396,24 +417,25 @@ if saved_agent_names:
 else:
     st.info("No saved agents yet. Create an agent config first.")
 
-if st.session_state["started_agents"]:
-    st.write("Started agent status")
-    for agent_name, details in st.session_state["started_agents"].items():
-        pid = details.get("pid")
-        running = bool(pid) and is_process_running(pid)
-        if running:
-            st.success(f"{agent_name} is running in {details['mode']} mode.")
+if st.session_state["kubernetes_agent_status"]:
+    st.write("Agent worker status")
+    for agent_name, details in st.session_state["kubernetes_agent_status"].items():
+        if details.get("deployed"):
+            st.success(details.get("message", f"{agent_name} deployed."))
         else:
-            st.warning(f"{agent_name} is not currently running. Check {details['log_path']}.")
+            st.warning(details.get("message", f"{agent_name} is not deployed."))
         st.code(
             json.dumps(
                 {
                     "agent_name": agent_name,
-                    "pid": pid,
-                    "mode": details["mode"],
-                    "running": running,
-                    "log_path": details["log_path"],
-                    "command": details["command"],
+                    "namespace": details.get("namespace"),
+                    "deployment_name": details.get("deployment_name"),
+                    "service_name": details.get("service_name"),
+                    "deployed": details.get("deployed"),
+                    "desired_replicas": details.get("desired_replicas"),
+                    "ready_replicas": details.get("ready_replicas"),
+                    "running_pods": details.get("running_pods"),
+                    "total_running_workers": details.get("total_running_workers"),
                 },
                 indent=2,
             ),

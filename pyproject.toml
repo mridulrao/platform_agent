@@ -15,7 +15,15 @@ dependencies = [
     "livekit-plugins-openai>=1.2.2",
     "livekit-plugins-silero>=1.2.2",
     "pydantic>=2.10.0",
+    "psycopg[binary]>=3.2.0",
     "python-dotenv>=1.0.1",
     "requests>=2.32.0",
     "streamlit>=1.43.0",
 ]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["agent_config", "livekit_agents", "livekit_agents_tools", "livekit_trunks", "scripts"]

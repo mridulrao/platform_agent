@@ -1,0 +1,13 @@
+.git
+.gitignore
+.venv
+__pycache__/
+*.py[oc]
+.env
+.env.local
+.run_logs
+.worker_state
+build/
+dist/
+wheels/
+*.egg-info

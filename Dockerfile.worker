@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+COPY pyproject.toml README.txt ./
+COPY agent_config ./agent_config
+COPY livekit_agents ./livekit_agents
+COPY livekit_agents_tools ./livekit_agents_tools
+COPY livekit_trunks ./livekit_trunks
+COPY scripts ./scripts
+COPY backend_service.py streamlit_app.py main.py ./
+
+RUN pip install --upgrade pip && pip install .
+
+CMD ["python", "-m", "livekit_agents.create_agent", "start"]

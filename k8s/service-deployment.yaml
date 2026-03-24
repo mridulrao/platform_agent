@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-agent-service
+  namespace: platform-vva-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-agent-service
+  template:
+    metadata:
+      labels:
+        app: platform-agent-service
+    spec:
+      serviceAccountName: platform-agent-service
+      containers:
+        - name: service
+          image: fpaiopsstaging.azurecr.io/platform-agent-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8501
+              name: http
+          envFrom:
+            - configMapRef:
+                name: platform-agent-config
+            - secretRef:
+                name: platform-agent-secrets
+          readinessProbe:
+            tcpSocket:
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8501
+            initialDelaySeconds: 20
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-agent-service
+  namespace: platform-vva-agent
+spec:
+  selector:
+    app: platform-agent-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8501
