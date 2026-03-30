@@ -4,11 +4,14 @@ import json
 import random
 import re
 import time
+import logging
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
 from indexing_config import indexing_config
+
+logger = logging.getLogger(__name__)
 
 MAX_RETRIES = indexing_config.indexing_max_retries
 BASE_DELAY = indexing_config.indexing_retry_delay_seconds
@@ -165,7 +168,12 @@ def _clip_text(text: str, max_chars: int = 14000) -> str:
 
 def _backoff_sleep(attempt: int) -> None:
     sleep_time = BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
-    print(f"[Retry {attempt}/{MAX_RETRIES}] Retrying in {sleep_time:.2f}s...")
+    logger.warning(
+        "Retrying metadata/summary extraction | attempt=%d/%d sleep=%.2fs",
+        attempt,
+        MAX_RETRIES,
+        sleep_time,
+    )
     time.sleep(sleep_time)
 
 

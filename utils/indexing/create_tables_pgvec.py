@@ -27,6 +27,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Any, Optional, Set, Tuple
+from tqdm.auto import tqdm
 
 from dotenv import load_dotenv
 
@@ -530,6 +531,7 @@ class KnowledgeBaseInserter:
         update_if_exists: bool = True,
         max_workers: Optional[int] = None,
         stop_on_error: bool = False,
+        progress_desc: Optional[str] = None,
     ) -> Dict[str, Any]:
         t0 = time.time()
         articles = articles or []
@@ -580,7 +582,16 @@ class KnowledgeBaseInserter:
                 return kbid, False, "failed", str(e)
 
         if not max_workers or max_workers <= 1:
-            for a in normalized:
+            iterator = tqdm(
+                normalized,
+                total=len(normalized),
+                desc=progress_desc or "Syncing articles",
+                unit="article",
+                leave=False,
+                dynamic_ncols=True,
+                disable=not normalized,
+            )
+            for a in iterator:
                 kbid, ok, op, err = _run_one(a)
                 if op in ("inserted", "updated", "skipped", "failed"):
                     stats[op] += 1
@@ -595,7 +606,16 @@ class KnowledgeBaseInserter:
             max_workers = max(1, min(int(max_workers), 64))
             with ThreadPoolExecutor(max_workers=max_workers) as ex:
                 futs = [ex.submit(_run_one, a) for a in normalized]
-                for fut in as_completed(futs):
+                progress = tqdm(
+                    as_completed(futs),
+                    total=len(futs),
+                    desc=progress_desc or "Syncing articles",
+                    unit="article",
+                    leave=False,
+                    dynamic_ncols=True,
+                    disable=not futs,
+                )
+                for fut in progress:
                     kbid, ok, op, err = fut.result()
                     if op in ("inserted", "updated", "skipped", "failed"):
                         stats[op] += 1
@@ -635,7 +655,11 @@ class KnowledgeBaseInserter:
     # Batch delete
     # ─────────────────────────────────────────────────────────────────────────
 
-    def delete_batch_articles(self, kbids: List[str]) -> Dict[str, Any]:
+    def delete_batch_articles(
+        self,
+        kbids: List[str],
+        progress_desc: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Delete articles from the vector store and release their shard slots.
         Returns {"successful": int, "failed": int}.
@@ -646,7 +670,17 @@ class KnowledgeBaseInserter:
         if not kbids:
             return {"successful": 0, "failed": 0}
 
-        for kbid in kbids:
+        iterator = tqdm(
+            kbids,
+            total=len(kbids),
+            desc=progress_desc or "Deleting articles",
+            unit="article",
+            leave=False,
+            dynamic_ncols=True,
+            disable=not kbids,
+        )
+
+        for kbid in iterator:
             try:
                 # Find shard before deleting — we need it to decrement the counter.
                 shard_id = self._get_shard_for_kbid(kbid)

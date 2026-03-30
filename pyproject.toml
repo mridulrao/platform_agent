@@ -6,6 +6,7 @@ readme = "README.txt"
 requires-python = ">=3.11"
 dependencies = [
     "aiohttp>=3.11.0",
+    "beautifulsoup4>=4.12.0",
     "livekit>=1.0.8",
     "livekit-agents>=1.2.2",
     "livekit-plugins-deepgram>=1.2.2",
@@ -14,11 +15,20 @@ dependencies = [
     "livekit-plugins-noise-cancellation>=0.2.5",
     "livekit-plugins-openai>=1.2.2",
     "livekit-plugins-silero>=1.2.2",
+    "openai>=2.29.0",
+    "pandas>=2.3.3",
+    "pdfplumber>=0.11.0",
+    "pgvector>=0.3.0",
+    "pillow>=12.1.0",
     "pydantic>=2.10.0",
     "psycopg[binary]>=3.2.0",
+    "psycopg2-binary>=2.9.10",
     "python-dotenv>=1.0.1",
     "requests>=2.32.0",
+    "sentence-transformers>=3.0.0",
+    "sqlalchemy>=2.0.0",
     "streamlit>=1.43.0",
+    "tqdm>=4.67.0",
 ]
 
 [build-system]

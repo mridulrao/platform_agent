@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Set, Tuple, Optional
 from dataclasses import dataclass
 from sqlalchemy import text
+from tqdm.auto import tqdm
 
 from pgvec_client import create_pgvector_client
 from create_tables_pgvec import KnowledgeBaseInserter
@@ -52,11 +53,28 @@ except ImportError:
 
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+def configure_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
+    # Keep third-party API/client logs from flooding the console while still
+    # surfacing warnings and errors from retries or request failures.
+    for noisy_logger in (
+        "openai",
+        "openai._base_client",
+        "httpx",
+        "httpcore",
+        "azure",
+        "azure.core",
+        "azure.core.pipeline",
+        "azure.core.pipeline.policies.http_logging_policy",
+    ):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
+
+configure_logging()
 logger = logging.getLogger(__name__)
 
 _pg_client = None
@@ -474,7 +492,14 @@ class KBComparisonService:
     def _build_article_payloads(self, docs: List[DocumentInfo]) -> Tuple[List[Dict[str, str]], int]:
         articles: List[Dict[str, str]] = []
         skipped = 0
-        for doc in docs:
+        for doc in tqdm(
+            docs,
+            desc="Preparing articles",
+            unit="article",
+            leave=False,
+            dynamic_ncols=True,
+            disable=not docs,
+        ):
             if not (doc.number and str(doc.number).strip()):
                 logger.warning("Skipping doc with missing kbid/number. name=%r", doc.name)
                 skipped += 1
@@ -496,14 +521,26 @@ class KBComparisonService:
         articles.sort(key=lambda item: item["kbid"])
         return articles, skipped
 
+    def _log_section(self, title: str, count: Optional[int] = None) -> None:
+        suffix = f" ({count})" if count is not None else ""
+        logger.info("")
+        logger.info("=" * 72)
+        logger.info("%s%s", title, suffix)
+        logger.info("=" * 72)
+
+    def _log_doc_preview(self, label: str, lines: List[str]) -> None:
+        if not lines:
+            return
+        logger.info("%s:", label)
+        for line in lines:
+            logger.info("  %s", line)
+
     def sync_new_articles(self, new_docs: List[DocumentInfo]) -> Tuple[int, int, int]:
         if not new_docs:
             logger.info("No new articles to sync")
             return 0, 0, 0
 
-        logger.info(f"\n{'='*70}")
-        logger.info(f"SYNCING NEW ARTICLES ({len(new_docs)})")
-        logger.info(f"{'='*70}")
+        self._log_section("SYNCING NEW ARTICLES", len(new_docs))
 
         articles_to_insert, skipped_from_prep = self._build_article_payloads(new_docs)
 
@@ -511,10 +548,18 @@ class KBComparisonService:
             articles=articles_to_insert,
             update_if_exists=False,
             max_workers=6,
+            progress_desc="Indexing new articles",
         )
 
         inserted, updated, skipped, failed = self._extract_counts_from_batch_stats(stats)
         inserted_total = inserted + updated
+        logger.info(
+            "New article sync finished | inserted=%d skipped=%d failed=%d duration=%.3fs",
+            inserted_total,
+            skipped + skipped_from_prep,
+            failed,
+            stats.get("duration_s") or 0.0,
+        )
         return inserted_total, skipped + skipped_from_prep, failed
 
     def sync_updated_articles(self, updated_docs: List[Tuple[DocumentInfo, DocumentInfo]]) -> Tuple[int, int, int]:
@@ -522,9 +567,7 @@ class KBComparisonService:
             logger.info("No updated articles to sync")
             return 0, 0, 0
 
-        logger.info(f"\n{'='*70}")
-        logger.info(f"SYNCING UPDATED ARTICLES ({len(updated_docs)})")
-        logger.info(f"{'='*70}")
+        self._log_section("SYNCING UPDATED ARTICLES", len(updated_docs))
 
         articles_to_update, skipped_from_prep = self._build_article_payloads(
             [source_doc for source_doc, _ in updated_docs]
@@ -534,10 +577,18 @@ class KBComparisonService:
             articles=articles_to_update,
             update_if_exists=True,
             max_workers=6,
+            progress_desc="Reindexing updated articles",
         )
 
         inserted, updated, skipped, failed = self._extract_counts_from_batch_stats(stats)
         updated_total = updated + inserted
+        logger.info(
+            "Updated article sync finished | updated=%d skipped=%d failed=%d duration=%.3fs",
+            updated_total,
+            skipped + skipped_from_prep,
+            failed,
+            stats.get("duration_s") or 0.0,
+        )
         return updated_total, skipped + skipped_from_prep, failed
 
     def sync_deleted_articles(self, deleted_doc_ids: List[str]) -> Tuple[int, int]:
@@ -545,24 +596,24 @@ class KBComparisonService:
             logger.info("No deleted articles to sync")
             return 0, 0
 
-        logger.info(f"\n{'='*70}")
-        logger.info(f"SYNCING DELETED ARTICLES ({len(deleted_doc_ids)})")
-        logger.info(f"{'='*70}")
+        self._log_section("SYNCING DELETED ARTICLES", len(deleted_doc_ids))
 
-        stats = self.inserter.delete_batch_articles(deleted_doc_ids)
+        stats = self.inserter.delete_batch_articles(
+            deleted_doc_ids,
+            progress_desc="Deleting removed articles",
+        )
 
         success = int(stats.get("successful", 0))
         failed = int(stats.get("failed", 0))
+        logger.info("Deleted article sync finished | deleted=%d failed=%d", success, failed)
         return success, failed
 
     async def run_comparison_and_sync(self, collection_id: str, org_id: str) -> SyncResult:
-        logger.info(f"\n{'='*80}")
-        logger.info("STARTING KB COMPARISON AND SYNC")
-        logger.info(f"Collection: {collection_id}")
-        logger.info(f"Organization: {org_id}")
+        self._log_section("STARTING KB COMPARISON AND SYNC")
+        logger.info("Collection: %s", collection_id)
+        logger.info("Organization: %s", org_id)
         if MAX_KB_DOCS > 0:
-            logger.info(f"MAX_KB_DOCS: {MAX_KB_DOCS} (random sampling enabled)")
-        logger.info(f"{'='*80}\n")
+            logger.info("MAX_KB_DOCS: %d (random sampling enabled)", MAX_KB_DOCS)
 
         sync_result = SyncResult()
 
@@ -630,9 +681,7 @@ class KBComparisonService:
             sync_result.deleted_success = deleted_success
             sync_result.deleted_failed = deleted_failed
 
-            logger.info(f"\n{'='*80}")
-            logger.info("SYNC COMPLETE")
-            logger.info(f"{'='*80}")
+            self._log_section("SYNC COMPLETE")
             logger.info(sync_result.summary())
 
             return sync_result
@@ -644,48 +693,36 @@ class KBComparisonService:
             raise
 
     def print_detailed_results(self, result: ComparisonResult):
-        print("\n" + "=" * 80)
-        print("DETAILED COMPARISON RESULTS")
-        print("=" * 80)
-
-        print(result.summary())
+        self._log_section("DETAILED COMPARISON RESULTS")
+        logger.info(result.summary())
 
         if result.new_documents:
-            print("\nNEW DOCUMENTS:")
-            print("-" * 80)
-            for doc in result.new_documents[:10]:
-                print(f"    Number: {doc.number}")
-                print(f"    Name: {doc.name}")
-                print(f"    Updated At: {doc.updated_at}")
-                print(f"    Is Deleted: {doc.is_deleted}")
-                print()
-            if len(result.new_documents) > 10:
-                print(f"    ... and {len(result.new_documents) - 10} more")
+            preview = [
+                f"{doc.number} | {doc.name} | updated={doc.updated_at.isoformat()}"
+                for doc in result.new_documents[:5]
+            ]
+            if len(result.new_documents) > 5:
+                preview.append(f"... and {len(result.new_documents) - 5} more")
+            self._log_doc_preview("New documents", preview)
 
         if result.updated_documents:
-            print("\nUPDATED DOCUMENTS:")
-            print("-" * 80)
-            for source_doc, vector_doc in result.updated_documents[:10]:
-                print(f"    Number: {source_doc.number}")
-                print(f"    Name: {source_doc.name}")
-                print(f"    Source Updated At:  {source_doc.updated_at}")
-                print(f"    Vector Updated At:  {vector_doc.updated_at}")
-                print(f"    Time Difference:    {source_doc.updated_at - vector_doc.updated_at}")
-                print(f"    Is Deleted: {source_doc.is_deleted}")
-                print()
-            if len(result.updated_documents) > 10:
-                print(f"    ... and {len(result.updated_documents) - 10} more")
+            preview = [
+                (
+                    f"{source_doc.number} | src={source_doc.updated_at.isoformat()} | "
+                    f"vec={vector_doc.updated_at.isoformat()} | "
+                    f"delta={source_doc.updated_at - vector_doc.updated_at}"
+                )
+                for source_doc, vector_doc in result.updated_documents[:5]
+            ]
+            if len(result.updated_documents) > 5:
+                preview.append(f"... and {len(result.updated_documents) - 5} more")
+            self._log_doc_preview("Updated documents", preview)
 
         if result.deleted_documents:
-            print("\nDELETED DOCUMENTS (exist in vector but not in source or marked as deleted):")
-            print("-" * 80)
-            for doc_number in result.deleted_documents[:10]:
-                print(f"  • Doc ID: {doc_number}")
+            preview = [f"{doc_number}" for doc_number in result.deleted_documents[:10]]
             if len(result.deleted_documents) > 10:
-                print(f"  ... and {len(result.deleted_documents) - 10} more")
-            print()
-
-        print("=" * 80 + "\n")
+                preview.append(f"... and {len(result.deleted_documents) - 10} more")
+            self._log_doc_preview("Deleted documents", preview)
 
     def cleanup(self):
         logger.info("Cleaning up database connections...")
