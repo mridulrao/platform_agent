@@ -86,12 +86,17 @@ def build_kubectl_apply_command(manifest_path: Path) -> list[str]:
     ]
 
 
-def build_kubectl_delete_command(manifest_path: Path) -> list[str]:
+def build_kubectl_delete_command(agent_name: str, namespace: str) -> list[str]:
+    deployment_name = _deployment_name(agent_name)
     return [
         os.getenv("KUBECTL_BIN", "kubectl"),
         "delete",
-        "-f",
-        str(manifest_path),
+        "deployment",
+        deployment_name,
+        "service",
+        deployment_name,
+        "-n",
+        namespace,
         "--ignore-not-found=true",
     ]
 
@@ -122,26 +127,9 @@ def _deployment_name(agent_name: str) -> str:
     return f"agent-worker-{agent_name}"
 
 
-def _ensure_namespace(namespace: str) -> None:
-    kubectl_bin = os.getenv("KUBECTL_BIN", "kubectl")
-    get_result = _run_command([kubectl_bin, "get", "namespace", namespace])
-    if get_result.returncode == 0:
-        return
-
-    create_result = _run_command([kubectl_bin, "create", "namespace", namespace])
-    if create_result.returncode != 0:
-        detail = (
-            create_result.stderr.strip()
-            or create_result.stdout.strip()
-            or f"Failed to create namespace '{namespace}'."
-        )
-        raise RuntimeError(detail)
-
-
 def deploy_agent_to_kubernetes_backend(agent_name: str) -> CreateAgentResult:
     image = _resolve_worker_image()
     namespace = _resolve_k8s_namespace()
-    _ensure_namespace(namespace)
     manifest_path = _generated_manifest_path(agent_name)
     manifest_path.write_text(
         render_manifest(agent_name, image=image, replicas=1, namespace=namespace),
@@ -252,20 +240,8 @@ def get_kubernetes_agent_status_backend(agent_name: str) -> KubernetesAgentStatu
 
 
 def delete_agent_deployment_backend(agent_name: str) -> StartAgentResult:
-    manifest_path = _generated_manifest_path(agent_name)
-    if not manifest_path.exists():
-        return StartAgentResult(
-            pid=None,
-            port=None,
-            command=[],
-            log_path="",
-            started=False,
-            message=f"No Kubernetes manifest found for agent '{agent_name}'.",
-            status="not_deployed",
-            healthy=False,
-        )
-
-    result = _run_command(build_kubectl_delete_command(manifest_path))
+    namespace = _resolve_k8s_namespace()
+    result = _run_command(build_kubectl_delete_command(agent_name, namespace))
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "kubectl delete failed."
         return StartAgentResult(
@@ -285,7 +261,7 @@ def delete_agent_deployment_backend(agent_name: str) -> StartAgentResult:
         command=[],
         log_path="",
         started=True,
-        message=f"Agent '{agent_name}' deployment deleted from Kubernetes.",
+        message=f"Agent '{agent_name}' deployment deleted from Kubernetes namespace '{namespace}'.",
         status="deleted",
         healthy=False,
     )

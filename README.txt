@@ -17,6 +17,9 @@ Kubernetes
 - The UI `Create agent` action writes directly to `voice_virtual_agents` when `DATABASE_URL` is present.
 - Generate the Kubernetes namespace/configmap/secret from `.env` with:
   `python scripts/render_k8s_runtime_config.py > k8s/runtime-config.generated.yaml`
+- Render the service account/RBAC/service manifests with the same namespace:
+  `envsubst < k8s/service-rbac.yaml | kubectl apply -f -`
+  `envsubst < k8s/service-deployment.yaml | kubectl apply -f -`
 - Example manifests are in `k8s/`.
 - Render an agent-specific worker deployment with:
   `python scripts/render_k8s_worker_manifest.py <agent-name> --image <worker-image>`

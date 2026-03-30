@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -10,6 +11,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from agent_config.store import load_agent_config
+
+
+DEFAULT_K8S_NAMESPACE = "platform-agent"
 
 
 def render_manifest(agent_name: str, image: str, replicas: int, namespace: str) -> str:
@@ -79,7 +83,7 @@ def main() -> int:
     parser.add_argument("agent_name")
     parser.add_argument("--image", required=True)
     parser.add_argument("--replicas", type=int, default=1)
-    parser.add_argument("--namespace", default="platform-agent")
+    parser.add_argument("--namespace", default=os.getenv("K8S_NAMESPACE", DEFAULT_K8S_NAMESPACE))
     args = parser.parse_args()
     print(render_manifest(args.agent_name, args.image, args.replicas, args.namespace))
     return 0

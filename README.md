@@ -43,8 +43,8 @@ flowchart LR
 - [livekit_agents/create_agent.py](/Users/mridulrao/Downloads/psuedo_desktop/platform_agent/livekit_agents/create_agent.py): worker entrypoint
 - [scripts/render_k8s_runtime_config.py](/Users/mridulrao/Downloads/psuedo_desktop/platform_agent/scripts/render_k8s_runtime_config.py): renders namespace/configmap/secret from `.env`
 - [scripts/render_k8s_worker_manifest.py](/Users/mridulrao/Downloads/psuedo_desktop/platform_agent/scripts/render_k8s_worker_manifest.py): renders per-agent worker deployment YAML
-- [k8s/service-deployment.yaml](/Users/mridulrao/Downloads/psuedo_desktop/platform_agent/k8s/service-deployment.yaml): Streamlit service deployment
-- [k8s/service-rbac.yaml](/Users/mridulrao/Downloads/psuedo_desktop/platform_agent/k8s/service-rbac.yaml): service account and RBAC for in-cluster deploys
+- [k8s/service-deployment.yaml](/Users/mridulrao/Downloads/psuedo_desktop/platform_agent/k8s/service-deployment.yaml): Streamlit service deployment template
+- [k8s/service-rbac.yaml](/Users/mridulrao/Downloads/psuedo_desktop/platform_agent/k8s/service-rbac.yaml): service account and RBAC template for in-cluster deploys
 
 ## Environment
 
@@ -55,6 +55,14 @@ Generate Kubernetes runtime config from `.env`:
 ```bash
 ./.venv/bin/python scripts/render_k8s_runtime_config.py > k8s/runtime-config.generated.yaml
 kubectl apply -f k8s/runtime-config.generated.yaml
+```
+
+Render the base service manifests with the same namespace:
+
+```bash
+export K8S_NAMESPACE="${K8S_NAMESPACE:-platform-agent}"
+envsubst < k8s/service-rbac.yaml | kubectl apply -f -
+envsubst < k8s/service-deployment.yaml | kubectl apply -f -
 ```
 
 ## Local Development
@@ -84,14 +92,14 @@ Apply cluster config:
 
 ```bash
 kubectl apply -f k8s/runtime-config.generated.yaml
-kubectl apply -f k8s/service-rbac.yaml
-kubectl apply -f k8s/service-deployment.yaml
+envsubst < k8s/service-rbac.yaml | kubectl apply -f -
+envsubst < k8s/service-deployment.yaml | kubectl apply -f -
 ```
 
 Access the in-cluster UI:
 
 ```bash
-kubectl port-forward -n platform-vva-agent svc/platform-agent-service 8501:80
+kubectl port-forward -n "$K8S_NAMESPACE" svc/platform-agent-service 8501:80
 ```
 
 ## UI Workflow
@@ -112,19 +120,19 @@ kubectl port-forward -n platform-vva-agent svc/platform-agent-service 8501:80
 Check service logs:
 
 ```bash
-kubectl logs -n platform-vva-agent deploy/platform-agent-service -f
+kubectl logs -n "$K8S_NAMESPACE" deploy/platform-agent-service -f
 ```
 
 Check worker logs:
 
 ```bash
-kubectl logs -n platform-vva-agent deploy/agent-worker-<agent-name> -f
+kubectl logs -n "$K8S_NAMESPACE" deploy/agent-worker-<agent-name> -f
 ```
 
 List deployed workers:
 
 ```bash
-kubectl get deploy,svc,pods -n platform-vva-agent
+kubectl get deploy,svc,pods -n "$K8S_NAMESPACE"
 ```
 
 ## TODO

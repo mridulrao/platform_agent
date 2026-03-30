@@ -9,16 +9,17 @@ Kubernetes deployment
 `kubectl apply -f k8s/runtime-config.generated.yaml`
 
 3) Apply RBAC for the Streamlit service:
-`kubectl apply -f k8s/service-rbac.yaml`
+`envsubst < k8s/service-rbac.yaml | kubectl apply -f -`
 
 4) Deploy the Streamlit service:
-`kubectl apply -f k8s/service-deployment.yaml`
+`envsubst < k8s/service-deployment.yaml | kubectl apply -f -`
 
 5) Render and apply a worker manifest for a saved agent config:
 `./.venv/bin/python scripts/render_k8s_worker_manifest.py livekit-agent-test --image your-registry/platform-agent-worker:latest > k8s/livekit-agent-test-worker.yaml`
 `kubectl apply -f k8s/livekit-agent-test-worker.yaml`
 
 Notes
+- Set `K8S_NAMESPACE` before applying the templated service manifests. If unset, use `platform-agent`.
 - Both service and worker load their shared runtime environment via `envFrom` from `platform-agent-config` and `platform-agent-secrets`.
 - `scripts/render_k8s_runtime_config.py` reads values from `.env`.
 - Both service and worker read agent configs from the database through `DATABASE_URL`.
