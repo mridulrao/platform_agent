@@ -7,7 +7,7 @@ import re
 import streamlit as st
 
 from agent_config.schema import AgentConfig, ProviderConfig, SIPProvisionConfig, VADConfig, WorkerConfig
-from agent_config.store import list_agent_configs
+from agent_config.store import list_agent_configs, use_db_backend
 from backend_service import (
     create_agent_backend,
     delete_agent_deployment_backend,
@@ -388,7 +388,10 @@ if saved_agent_names:
             st.session_state["kubernetes_agent_status"][run_agent_name] = get_kubernetes_agent_status_backend(
                 run_agent_name
             ).__dict__
-            st.success(f"{run_agent_name} deployed to Kubernetes.")
+            if use_db_backend():
+                st.success(f"{run_agent_name} deployment request queued.")
+            else:
+                st.success(f"{run_agent_name} deployed to Kubernetes.")
             st.code(serialize_result(result), language="json")
         except Exception as exc:
             st.error(str(exc))

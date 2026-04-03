@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -19,7 +20,9 @@ DEFAULT_K8S_NAMESPACE = "platform-agent"
 def render_manifest(agent_name: str, image: str, replicas: int, namespace: str) -> str:
     config = load_agent_config(agent_name)
     port = config.worker.port
-    app_name = f"agent-worker-{agent_name}"
+    normalized = re.sub(r"[^a-z0-9-]+", "-", agent_name.lower())
+    normalized = re.sub(r"-+", "-", normalized).strip("-")
+    app_name = f"agent-worker-{normalized}"
     return f"""apiVersion: apps/v1
 kind: Deployment
 metadata:

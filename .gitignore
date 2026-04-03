@@ -17,3 +17,6 @@ wheels/
 .worker_state
 k8s/generated/
 k8s/runtime-config.generated.yaml
+
+node_modules/
+
