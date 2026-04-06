@@ -1,0 +1,50 @@
+{
+  "name": "primary_agent",
+  "system_prompt": "You are a helpful assistant. Greet the caller and ask how you can help.",
+  "llm": {
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "kwargs": {}
+  },
+  "stt": {
+    "provider": "deepgram",
+    "model": "nova-3",
+    "kwargs": {
+      "language": "en-IN",
+      "detect_language": false,
+      "interim_results": true
+    }
+  },
+  "tts": {
+    "provider": "cartesia",
+    "model": "sonic-3",
+    "kwargs": {
+      "voice": "7ea5e9c2-b719-4dc3-b870-5ba5f14d31d8"
+    }
+  },
+  "vad": {
+    "provider": "silero",
+    "kwargs": {
+      "min_speech_duration": 0.07,
+      "min_silence_duration": 0.7,
+      "activation_threshold": 0.5,
+      "force_cpu": true,
+      "sample_rate": 16000
+    }
+  },
+  "tools": [],
+  "worker": {
+    "agent_name": "inbound_agent",
+    "job_memory_warn_mb": 2000,
+    "shutdown_process_timeout": 80.0,
+    "initialize_process_timeout": 540,
+    "num_idle_processes": 1,
+    "port": 8082
+  },
+  "session": {
+    "enable_telephony_noise_cancellation": false,
+    "noise_cancellation_provider": "bvc_telephony",
+    "noise_cancellation_kwargs": {},
+    "kwargs": {}
+  }
+}

@@ -1,0 +1,21 @@
+This file describes how to test the local agent. with the on-prem livekit server
+Make sure you have the following environment variables set:
+- DB_PROXY_URL
+
+This will test the primary_agent config defined in agent_config/primary_agent.json
+
+1. Start the agent:
+   ```
+   export DB_PROXY_URL='http://127.0.0.1:8000'
+   ```
+   ```
+   DATABASE_URL= DIRECT_URL= TARGET_AGENT_NAME=primary_agent ./.venv/bin/python -m livekit_agents.create_agent dev
+   ```
+
+2. Start the db_proxy:
+   ```
+   cd utils/proxy
+   ```
+   ```
+   ./.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+   ```

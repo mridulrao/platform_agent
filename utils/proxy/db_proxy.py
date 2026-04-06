@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+from functools import lru_cache
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 import aiohttp
 from fastapi import APIRouter, FastAPI, HTTPException
@@ -165,61 +167,182 @@ def _merge_json_sql(existing_column: str, excluded_column: str) -> str:
     """
 
 
+def _is_uuid(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        UUID(value)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+@lru_cache(maxsize=16)
+def _get_table_columns(table_name: str) -> tuple[str, ...]:
+    with _get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = %s
+                """,
+                (table_name,),
+            )
+            rows = cur.fetchall()
+    return tuple(row[0] for row in rows)
+
+
+def _prepare_call_data(call_identifier: str, call_data: dict[str, Any] | None) -> dict[str, Any] | None:
+    merged = dict(call_data or {})
+    if not _is_uuid(call_identifier):
+        merged.setdefault("external_call_id", call_identifier)
+    return merged or None
+
+
+def _find_call_row(cur, call_identifier: str, columns: set[str]) -> dict[str, Any] | None:
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if _is_uuid(call_identifier):
+        clauses.append("id = %s")
+        params.append(call_identifier)
+
+    if "interaction_id" in columns:
+        clauses.append("interaction_id = %s")
+        params.append(call_identifier)
+
+    if "call_data" in columns:
+        clauses.append("call_data->>'external_call_id' = %s")
+        params.append(call_identifier)
+
+    if not clauses:
+        return None
+
+    cur.execute(
+        f"""
+        SELECT *
+        FROM voice_virtual_agent_calls
+        WHERE {" OR ".join(clauses)}
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        params,
+    )
+    return cur.fetchone()
+
+
 def _create_or_update_call(payload: CallUpsertRequest) -> dict[str, Any]:
     _require_db_backend()
 
+    columns = set(_get_table_columns("voice_virtual_agent_calls"))
+    call_data = _prepare_call_data(payload.id, payload.call_data)
+
     with _get_db_connection() as conn:
         with _get_dict_cursor(conn) as cur:
+            existing_row = _find_call_row(cur, payload.id, columns)
+
+            if existing_row is not None:
+                assignments: list[str] = []
+                params: list[Any] = []
+
+                for field_name, value in (
+                    ("caller", payload.caller),
+                    ("channel", payload.channel),
+                    ("status", payload.status),
+                    ("ended_reason", payload.ended_reason),
+                    ("details_url", payload.details_url),
+                    ("ended_at", payload.ended_at),
+                    ("called_at", payload.called_at),
+                    ("recording_url", payload.recording_url),
+                    ("interaction_id", payload.interaction_id),
+                    ("voice_virtual_agent_id", payload.voice_virtual_agent_id),
+                ):
+                    if field_name in columns and value is not None:
+                        assignments.append(f"{field_name} = %s")
+                        params.append(value)
+
+                if "call_data" in columns and call_data is not None:
+                    assignments.append(
+                        "call_data = "
+                        + _merge_json_sql("voice_virtual_agent_calls.call_data", "%s::jsonb").strip()
+                    )
+                    params.append(json.dumps(call_data))
+
+                if not assignments:
+                    return existing_row
+
+                if "updated_at" in columns:
+                    assignments.append("updated_at = now()")
+
+                params.append(existing_row["id"])
+                cur.execute(
+                    f"""
+                    UPDATE voice_virtual_agent_calls
+                    SET {", ".join(assignments)}
+                    WHERE id = %s
+                    RETURNING *
+                    """,
+                    params,
+                )
+                row = cur.fetchone()
+                if row is None:
+                    raise HTTPException(status_code=500, detail="Failed to persist call record.")
+                return row
+
+            insert_columns: list[str] = []
+            insert_placeholders: list[str] = []
+            insert_params: list[Any] = []
+
+            if "id" in columns and _is_uuid(payload.id):
+                insert_columns.append("id")
+                insert_placeholders.append("%s")
+                insert_params.append(payload.id)
+
+            for field_name, value in (
+                ("caller", payload.caller),
+                ("channel", payload.channel),
+                ("status", payload.status),
+                ("ended_reason", payload.ended_reason),
+                ("details_url", payload.details_url),
+                ("ended_at", payload.ended_at),
+                ("called_at", payload.called_at),
+                ("recording_url", payload.recording_url),
+                ("voice_virtual_agent_id", payload.voice_virtual_agent_id),
+            ):
+                if field_name in columns and value is not None:
+                    insert_columns.append(field_name)
+                    insert_placeholders.append("%s")
+                    insert_params.append(value)
+
+            interaction_id = payload.interaction_id
+            if "interaction_id" in columns and interaction_id is None and not _is_uuid(payload.id):
+                interaction_id = payload.id
+            if "interaction_id" in columns and interaction_id is not None:
+                insert_columns.append("interaction_id")
+                insert_placeholders.append("%s")
+                insert_params.append(interaction_id)
+
+            if "call_data" in columns and call_data is not None:
+                insert_columns.append("call_data")
+                insert_placeholders.append("%s::jsonb")
+                insert_params.append(json.dumps(call_data))
+
+            if "updated_at" in columns:
+                insert_columns.append("updated_at")
+                insert_placeholders.append("now()")
+
+            if not insert_columns:
+                raise HTTPException(status_code=500, detail="No compatible call columns were found.")
+
             cur.execute(
                 f"""
-                INSERT INTO voice_virtual_agent_calls (
-                    id,
-                    caller,
-                    channel,
-                    status,
-                    ended_reason,
-                    details_url,
-                    ended_at,
-                    called_at,
-                    recording_url,
-                    interaction_id,
-                    voice_virtual_agent_id,
-                    call_data
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-                ON CONFLICT (id)
-                DO UPDATE SET
-                    caller = COALESCE(EXCLUDED.caller, voice_virtual_agent_calls.caller),
-                    channel = COALESCE(EXCLUDED.channel, voice_virtual_agent_calls.channel),
-                    status = COALESCE(EXCLUDED.status, voice_virtual_agent_calls.status),
-                    ended_reason = COALESCE(EXCLUDED.ended_reason, voice_virtual_agent_calls.ended_reason),
-                    details_url = COALESCE(EXCLUDED.details_url, voice_virtual_agent_calls.details_url),
-                    ended_at = COALESCE(EXCLUDED.ended_at, voice_virtual_agent_calls.ended_at),
-                    called_at = COALESCE(EXCLUDED.called_at, voice_virtual_agent_calls.called_at),
-                    recording_url = COALESCE(EXCLUDED.recording_url, voice_virtual_agent_calls.recording_url),
-                    interaction_id = COALESCE(EXCLUDED.interaction_id, voice_virtual_agent_calls.interaction_id),
-                    voice_virtual_agent_id = COALESCE(
-                        EXCLUDED.voice_virtual_agent_id,
-                        voice_virtual_agent_calls.voice_virtual_agent_id
-                    ),
-                    call_data = {_merge_json_sql("voice_virtual_agent_calls.call_data", "EXCLUDED.call_data")},
-                    updated_at = now()
+                INSERT INTO voice_virtual_agent_calls ({", ".join(insert_columns)})
+                VALUES ({", ".join(insert_placeholders)})
                 RETURNING *
                 """,
-                (
-                    payload.id,
-                    payload.caller,
-                    payload.channel,
-                    payload.status,
-                    payload.ended_reason,
-                    payload.details_url,
-                    payload.ended_at,
-                    payload.called_at,
-                    payload.recording_url,
-                    payload.interaction_id,
-                    payload.voice_virtual_agent_id,
-                    json.dumps(payload.call_data) if payload.call_data is not None else None,
-                ),
+                insert_params,
             )
             row = cur.fetchone()
             if row is None:
@@ -230,6 +353,7 @@ def _create_or_update_call(payload: CallUpsertRequest) -> dict[str, Any]:
 def _patch_call(call_id: str, payload: CallPatchRequest) -> dict[str, Any]:
     _require_db_backend()
 
+    columns = set(_get_table_columns("voice_virtual_agent_calls"))
     assignments: list[str] = []
     params: list[Any] = []
 
@@ -246,25 +370,33 @@ def _patch_call(call_id: str, payload: CallPatchRequest) -> dict[str, Any]:
         "voice_virtual_agent_id",
     ):
         value = getattr(payload, field_name)
-        if value is not None:
+        if field_name in columns and value is not None:
             assignments.append(f"{field_name} = %s")
             params.append(value)
 
-    if payload.call_data is not None:
+    call_data = _prepare_call_data(call_id, payload.call_data)
+
+    if "call_data" in columns and call_data is not None:
         assignments.append(
             "call_data = "
             + _merge_json_sql("voice_virtual_agent_calls.call_data", "%s::jsonb").strip()
         )
-        params.append(json.dumps(payload.call_data))
+        encoded_call_data = json.dumps(call_data)
+        params.extend([encoded_call_data, encoded_call_data, encoded_call_data])
 
     if not assignments:
         raise HTTPException(status_code=400, detail="No call fields were provided to update.")
 
-    assignments.append("updated_at = now()")
-    params.append(call_id)
-
     with _get_db_connection() as conn:
         with _get_dict_cursor(conn) as cur:
+            existing_row = _find_call_row(cur, call_id, columns)
+            if existing_row is None:
+                raise HTTPException(status_code=404, detail=f"Call '{call_id}' was not found.")
+
+            if "updated_at" in columns:
+                assignments.append("updated_at = now()")
+
+            params.append(existing_row["id"])
             cur.execute(
                 f"""
                 UPDATE voice_virtual_agent_calls
@@ -276,15 +408,22 @@ def _patch_call(call_id: str, payload: CallPatchRequest) -> dict[str, Any]:
             )
             row = cur.fetchone()
             if row is None:
-                raise HTTPException(status_code=404, detail=f"Call '{call_id}' was not found.")
+                raise HTTPException(status_code=500, detail="Failed to update call record.")
             return row
 
 
 def _create_call_event(call_id: str, payload: CallEventCreateRequest) -> dict[str, Any]:
     _require_db_backend()
 
+    columns = set(_get_table_columns("voice_virtual_agent_calls"))
+
     with _get_db_connection() as conn:
         with _get_dict_cursor(conn) as cur:
+            call_row = _find_call_row(cur, call_id, columns)
+            if call_row is None:
+                raise HTTPException(status_code=404, detail=f"Call '{call_id}' was not found.")
+            internal_call_id = call_row["id"]
+
             cur.execute(
                 """
                 SELECT id
@@ -292,11 +431,8 @@ def _create_call_event(call_id: str, payload: CallEventCreateRequest) -> dict[st
                 WHERE id = %s
                 FOR UPDATE
                 """,
-                (call_id,),
+                (internal_call_id,),
             )
-            call_row = cur.fetchone()
-            if call_row is None:
-                raise HTTPException(status_code=404, detail=f"Call '{call_id}' was not found.")
 
             cur.execute(
                 """
@@ -326,8 +462,8 @@ def _create_call_event(call_id: str, payload: CallEventCreateRequest) -> dict[st
                 RETURNING *
                 """,
                 (
-                    call_id,
-                    call_id,
+                    internal_call_id,
+                    internal_call_id,
                     payload.sequence_number,
                     payload.event_type,
                     payload.speaker,

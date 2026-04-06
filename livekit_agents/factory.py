@@ -3,6 +3,11 @@ from __future__ import annotations
 from livekit.plugins import deepgram, google, openai, silero
 
 try:
+    from livekit.plugins import cartesia
+except ImportError:  # pragma: no cover - optional dependency
+    cartesia = None
+
+try:
     from livekit.plugins import elevenlabs
 except ImportError:  # pragma: no cover - optional dependency
     elevenlabs = None
@@ -17,6 +22,15 @@ def _require_elevenlabs():
             "Install `livekit-plugins-elevenlabs` first."
         )
     return elevenlabs
+
+
+def _require_cartesia():
+    if cartesia is None:
+        raise ValueError(
+            "Cartesia provider selected, but the livekit Cartesia plugin is not installed. "
+            "Install `livekit-plugins-cartesia` first."
+        )
+    return cartesia
 
 
 def build_llm(config: AgentConfig):
@@ -50,6 +64,8 @@ def build_tts(config: AgentConfig):
     if config.tts.model is not None:
         kwargs.setdefault("model", config.tts.model)
 
+    if config.tts.provider == "cartesia":
+        return _require_cartesia().TTS(**kwargs)
     if config.tts.provider == "elevenlabs":
         return _require_elevenlabs().TTS(**kwargs)
     if config.tts.provider == "google":
