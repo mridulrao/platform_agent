@@ -7,6 +7,7 @@ import os
 from dotenv import load_dotenv
 
 from agent_config.schema import SIPProvisionConfig
+from agent_config.store import load_agent_config
 from livekit_trunks.provision import provision_inbound_sip_for_agent
 
 
@@ -20,6 +21,7 @@ async def main() -> None:
     agent_name = os.getenv("TARGET_AGENT_NAME")
     if not agent_name:
         raise RuntimeError("Set TARGET_AGENT_NAME to the agent you want to provision.")
+    agent_config = load_agent_config(agent_name)
 
     sip_config = SIPProvisionConfig(
         phone_number=os.getenv("INBOUND_PHONE_NUMBER", ""),
@@ -28,7 +30,11 @@ async def main() -> None:
         room_prefix=os.getenv("LIVEKIT_ROOM_PREFIX", "inbound"),
         hide_phone_number=os.getenv("LIVEKIT_HIDE_PHONE_NUMBER", "false").lower() == "true",
     )
-    result = await provision_inbound_sip_for_agent(agent_name, sip_config)
+    result = await provision_inbound_sip_for_agent(
+        agent_name,
+        sip_config,
+        dispatch_agent_name=agent_config.worker.agent_name or agent_config.name,
+    )
     logger.info("Provisioned inbound SIP resources: %s", result)
 
 

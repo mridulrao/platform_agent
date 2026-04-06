@@ -361,10 +361,11 @@ st.divider()
 st.subheader("Create SIP Trunk")
 st.caption(
     "This uses your LiveKit credentials from environment variables. "
-    "Enter the agent name, E.164 phone number, trunk name, and dispatch rule name."
+    "Enter the saved config name, E.164 phone number, trunk name, and dispatch rule name. "
+    "The LiveKit dispatch target will use that config's worker.agent_name."
 )
 with st.form("sip_form"):
-    sip_agent_name = st.text_input("Agent name", placeholder="sales_agent_india")
+    sip_agent_name = st.text_input("Saved config name", placeholder="sales_agent_india")
     phone_number = st.text_input("Agent phone number (E.164)", placeholder="+14155550123")
     trunk_friendly_name = st.text_input("SIP trunk name", value="sales-agent-trunk")
     dispatch_rule_name = st.text_input("Dispatch rule name", value="sales-agent-dispatch")

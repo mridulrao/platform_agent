@@ -568,6 +568,9 @@ def create_agent_backend(config: AgentConfig, phone_number: str) -> CreateAgentR
 def provision_sip_backend(agent_name: str, sip_config: SIPProvisionConfig) -> dict[str, str]:
     import asyncio
 
+    config_payload = load_agent_config(agent_name)
+    dispatch_agent_name = config_payload.worker.agent_name or config_payload.name
+
     existing_phone_binding = get_sip_binding_by_phone_number(sip_config.phone_number) if use_db_backend() else None
     if existing_phone_binding:
         raise ValueError(
@@ -599,7 +602,13 @@ def provision_sip_backend(agent_name: str, sip_config: SIPProvisionConfig) -> di
         )
 
     try:
-        result = asyncio.run(provision_inbound_sip_for_agent(agent_name, sip_config))
+        result = asyncio.run(
+            provision_inbound_sip_for_agent(
+                agent_name,
+                sip_config,
+                dispatch_agent_name=dispatch_agent_name,
+            )
+        )
     except Exception as exc:
         if use_db_backend():
             save_agent_sip_binding_status(

@@ -20,9 +20,10 @@ logger = logging.getLogger("livekit-sip-provision")
 
 
 async def provision_inbound_sip_for_agent(
-    agent_name: str, sip_config: SIPProvisionConfig
+    agent_name: str, sip_config: SIPProvisionConfig, dispatch_agent_name: str | None = None
 ) -> dict[str, str]:
     livekit_api = api.LiveKitAPI()
+    resolved_dispatch_agent_name = dispatch_agent_name or agent_name
 
     try:
         trunk_request = CreateSIPInboundTrunkRequest(
@@ -44,10 +45,10 @@ async def provision_inbound_sip_for_agent(
                 room_config=api.RoomConfiguration(
                     agents=[
                         api.RoomAgentDispatch(
-                            agent_name=agent_name,
+                            agent_name=resolved_dispatch_agent_name,
                             metadata=json.dumps(
                                 {
-                                    "target_agent": agent_name,
+                                    "target_agent": resolved_dispatch_agent_name,
                                     "config_name": agent_name,
                                 }
                             ),
@@ -62,6 +63,7 @@ async def provision_inbound_sip_for_agent(
 
         return {
             "agent_name": agent_name,
+            "dispatch_agent_name": resolved_dispatch_agent_name,
             "trunk_id": trunk_response.sip_trunk_id,
             "dispatch_rule_id": getattr(dispatch_response, "sip_dispatch_rule_id", ""),
         }
