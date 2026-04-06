@@ -11,6 +11,7 @@ COPY agent_config ./agent_config
 COPY livekit_agents ./livekit_agents
 COPY livekit_agents_tools ./livekit_agents_tools
 COPY livekit_trunks ./livekit_trunks
+COPY utils ./utils
 COPY scripts ./scripts
 COPY backend_service.py streamlit_app.py main.py ./
 

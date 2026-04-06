@@ -120,6 +120,8 @@ def deploy_worker(agent_name: str, mode: str, wait_seconds: float) -> int:
     command = build_worker_command(mode)
     env = os.environ.copy()
     env["TARGET_AGENT_NAME"] = agent_name
+    if config.worker.db_proxy_url:
+        env["DB_PROXY_URL"] = config.worker.db_proxy_url
 
     with log_path.open("a", encoding="utf-8") as log_file:
         process = subprocess.Popen(
@@ -138,7 +140,11 @@ def deploy_worker(agent_name: str, mode: str, wait_seconds: float) -> int:
         pid=process.pid,
         port=port,
         log_path=str(log_path),
-        command=[f"TARGET_AGENT_NAME={agent_name}", *command],
+        command=[
+            f"TARGET_AGENT_NAME={agent_name}",
+            *([f"DB_PROXY_URL={config.worker.db_proxy_url}"] if config.worker.db_proxy_url else []),
+            *command,
+        ],
         started_at=time.time(),
     )
     write_state(state)

@@ -40,5 +40,12 @@ dependencies = [
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["agent_config", "livekit_agents", "livekit_agents_tools", "livekit_trunks", "scripts"]
+[tool.setuptools.packages.find]
+include = [
+    "agent_config*",
+    "livekit_agents*",
+    "livekit_agents_tools*",
+    "livekit_trunks*",
+    "scripts*",
+    "utils*",
+]

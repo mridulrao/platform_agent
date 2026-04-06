@@ -21,19 +21,27 @@ spec:
           ports:
             - containerPort: 8501
               name: http
+            - containerPort: 8000
+              name: db-proxy
           envFrom:
             - configMapRef:
                 name: platform-agent-config
             - secretRef:
                 name: platform-agent-secrets
           readinessProbe:
-            tcpSocket:
-              port: 8501
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - curl -fsS http://127.0.0.1:8501/_stcore/health >/dev/null && curl -fsS http://127.0.0.1:8000/db-proxy/health >/dev/null
             initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
-            tcpSocket:
-              port: 8501
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - curl -fsS http://127.0.0.1:8501/_stcore/health >/dev/null && curl -fsS http://127.0.0.1:8000/db-proxy/health >/dev/null
             initialDelaySeconds: 20
             periodSeconds: 20
 ---
@@ -49,3 +57,6 @@ spec:
     - name: http
       port: 80
       targetPort: 8501
+    - name: db-proxy
+      port: 8000
+      targetPort: 8000

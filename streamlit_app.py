@@ -277,6 +277,10 @@ vad_kwargs = st.text_area("VAD kwargs (JSON)", key="vad_kwargs", height=140)
 
 st.subheader("Worker options")
 worker_agent_name = st.text_input("Worker agent_name", value="")
+worker_db_proxy_url = st.text_input(
+    "DB proxy URL",
+    value=os.getenv("DB_PROXY_URL", "http://platform-agent-service:8000"),
+)
 worker_port = st.number_input("Port", min_value=1, max_value=65535, value=8082)
 worker_job_memory_warn_mb = st.number_input("job_memory_warn_mb", min_value=1, value=2000)
 worker_shutdown_timeout = st.number_input("shutdown_process_timeout", min_value=1.0, value=80.0)
@@ -326,6 +330,7 @@ if submitted:
             ),
             worker=WorkerConfig(
                 agent_name=worker_agent_name or None,
+                db_proxy_url=worker_db_proxy_url.strip() or None,
                 port=int(worker_port),
                 job_memory_warn_mb=int(worker_job_memory_warn_mb),
                 shutdown_process_timeout=float(worker_shutdown_timeout),

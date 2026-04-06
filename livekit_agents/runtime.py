@@ -53,6 +53,7 @@ def _is_sip_participant(participant: rtc.RemoteParticipant | None) -> bool:
 def _build_session_info(
     ctx: JobContext,
     participant: rtc.RemoteParticipant | None,
+    config: AgentConfig,
 ) -> VVASessionInfo:
     attributes = _participant_attributes(participant)
     session_info = VVASessionInfo()
@@ -63,7 +64,7 @@ def _build_session_info(
         participant_kind=participant_kind,
         attributes=attributes,
     )
-    session_info.db_proxy = DBProxyClient()
+    session_info.db_proxy = DBProxyClient(base_url=config.worker.db_proxy_url)
     return session_info
 
 
@@ -89,7 +90,7 @@ async def run_agent_session(ctx: JobContext, config: AgentConfig) -> None:
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
     participant = await ctx.wait_for_participant()
-    session_info = _build_session_info(ctx, participant)
+    session_info = _build_session_info(ctx, participant, config)
     await session_info.create_call_record(
         room_name=ctx.room.name,
         agent_name=config.name,

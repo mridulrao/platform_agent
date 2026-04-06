@@ -25,11 +25,16 @@ SECRET_KEYS = [
 
 CONFIGMAP_KEYS = [
     "AGENT_WORKER_IMAGE",
+    "DB_PROXY_URL",
     "K8S_NAMESPACE",
     "KUBECTL_BIN",
     "LIVEKIT_ROOM_PREFIX",
     "LIVEKIT_HIDE_PHONE_NUMBER",
 ]
+
+DEFAULT_CONFIGMAP_VALUES = {
+    "DB_PROXY_URL": "http://platform-agent-service:8000",
+}
 
 
 def _quote(value: str) -> str:
@@ -47,7 +52,7 @@ def render_runtime_config(env_file: Path) -> str:
 
     configmap_lines = []
     for key in CONFIGMAP_KEYS:
-        value = values.get(key)
+        value = values.get(key) or DEFAULT_CONFIGMAP_VALUES.get(key)
         if value:
             configmap_lines.append(f'  {key}: "{_quote(value)}"')
 

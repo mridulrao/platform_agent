@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -15,11 +16,13 @@ from agent_config.store import load_agent_config
 
 
 DEFAULT_K8S_NAMESPACE = "platform-agent"
+DEFAULT_DB_PROXY_URL = "http://platform-agent-service:8000"
 
 
 def render_manifest(agent_name: str, image: str, replicas: int, namespace: str) -> str:
     config = load_agent_config(agent_name)
     port = config.worker.port
+    db_proxy_url = config.worker.db_proxy_url or os.getenv("DB_PROXY_URL") or DEFAULT_DB_PROXY_URL
     normalized = re.sub(r"[^a-z0-9-]+", "-", agent_name.lower())
     normalized = re.sub(r"-+", "-", normalized).strip("-")
     app_name = f"agent-worker-{normalized}"
@@ -47,7 +50,9 @@ spec:
               name: health
           env:
             - name: TARGET_AGENT_NAME
-              value: {agent_name}
+              value: {json.dumps(agent_name)}
+            - name: DB_PROXY_URL
+              value: {json.dumps(db_proxy_url)}
           envFrom:
             - configMapRef:
                 name: platform-agent-config

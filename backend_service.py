@@ -40,6 +40,7 @@ DEPLOY_SCRIPT = ROOT / "scripts" / "deploy_agent_worker.py"
 GENERATED_K8S_DIR = ROOT / "k8s" / "generated"
 DEFAULT_WORKER_IMAGE = "fpaiopsstaging.azurecr.io/platform-agent-worker:latest"
 DEFAULT_K8S_NAMESPACE = "platform-agent"
+DEFAULT_DB_PROXY_URL = "http://platform-agent-service:8000"
 DEPLOYMENT_WORKER_POLL_SECONDS = 2.0
 DEPLOYMENT_RECONCILE_SECONDS = 10.0
 
@@ -139,6 +140,12 @@ def _resolve_k8s_namespace() -> str:
     return os.getenv("K8S_NAMESPACE", DEFAULT_K8S_NAMESPACE)
 
 
+def _resolve_db_proxy_url(config_payload: AgentConfig | None = None) -> str:
+    if config_payload and config_payload.worker.db_proxy_url:
+        return config_payload.worker.db_proxy_url
+    return os.getenv("DB_PROXY_URL", DEFAULT_DB_PROXY_URL)
+
+
 def _generated_manifest_path(agent_name: str) -> Path:
     GENERATED_K8S_DIR.mkdir(parents=True, exist_ok=True)
     return GENERATED_K8S_DIR / f"{agent_name}.yaml"
@@ -177,7 +184,10 @@ def _build_worker_deployment_spec(agent_name: str, namespace: str, image: str) -
                             image=image,
                             image_pull_policy="IfNotPresent",
                             ports=[client.V1ContainerPort(container_port=port, name="health")],
-                            env=[client.V1EnvVar(name="TARGET_AGENT_NAME", value=agent_name)],
+                            env=[
+                                client.V1EnvVar(name="TARGET_AGENT_NAME", value=agent_name),
+                                client.V1EnvVar(name="DB_PROXY_URL", value=_resolve_db_proxy_url(config_payload)),
+                            ],
                             env_from=[
                                 client.V1EnvFromSource(
                                     config_map_ref=client.V1ConfigMapEnvSource(name="platform-agent-config")

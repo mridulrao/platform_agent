@@ -18,11 +18,15 @@ COPY agent_config ./agent_config
 COPY livekit_agents ./livekit_agents
 COPY livekit_agents_tools ./livekit_agents_tools
 COPY livekit_trunks ./livekit_trunks
+COPY utils ./utils
 COPY scripts ./scripts
 COPY backend_service.py streamlit_app.py main.py ./
 
 RUN pip install --upgrade pip && pip install .
 
-EXPOSE 8501
+EXPOSE 8501 8000
 
-CMD ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8501/_stcore/health >/dev/null && curl -fsS http://127.0.0.1:8000/db-proxy/health >/dev/null || exit 1
+
+CMD ["python", "-m", "scripts.run_service"]

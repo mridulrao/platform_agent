@@ -13,6 +13,7 @@ class ProviderConfig(BaseModel):
 
 class WorkerConfig(BaseModel):
     agent_name: str | None = None
+    db_proxy_url: str | None = None
     job_memory_warn_mb: int = 2000
     shutdown_process_timeout: float = 80.0
     initialize_process_timeout: int = 540
