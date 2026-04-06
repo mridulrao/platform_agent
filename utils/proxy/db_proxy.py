@@ -18,6 +18,7 @@ router = APIRouter(prefix="/db-proxy", tags=["db-proxy"])
 class CallUpsertRequest(BaseModel):
     id: str
     caller: str | None = None
+    channel: str | None = None
     status: str | None = None
     ended_reason: str | None = None
     details_url: str | None = None
@@ -33,6 +34,7 @@ class CallPatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     caller: str | None = None
+    channel: str | None = None
     status: str | None = None
     ended_reason: str | None = None
     details_url: str | None = None
@@ -64,6 +66,7 @@ class DBProxyClient:
         *,
         call_id: str,
         caller: str | None = None,
+        channel: str | None = None,
         status: str | None = None,
         ended_reason: str | None = None,
         details_url: str | None = None,
@@ -77,6 +80,7 @@ class DBProxyClient:
         payload = CallUpsertRequest(
             id=call_id,
             caller=caller,
+            channel=channel,
             status=status,
             ended_reason=ended_reason,
             details_url=details_url,
@@ -171,6 +175,7 @@ def _create_or_update_call(payload: CallUpsertRequest) -> dict[str, Any]:
                 INSERT INTO voice_virtual_agent_calls (
                     id,
                     caller,
+                    channel,
                     status,
                     ended_reason,
                     details_url,
@@ -181,10 +186,11 @@ def _create_or_update_call(payload: CallUpsertRequest) -> dict[str, Any]:
                     voice_virtual_agent_id,
                     call_data
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
                 ON CONFLICT (id)
                 DO UPDATE SET
                     caller = COALESCE(EXCLUDED.caller, voice_virtual_agent_calls.caller),
+                    channel = COALESCE(EXCLUDED.channel, voice_virtual_agent_calls.channel),
                     status = COALESCE(EXCLUDED.status, voice_virtual_agent_calls.status),
                     ended_reason = COALESCE(EXCLUDED.ended_reason, voice_virtual_agent_calls.ended_reason),
                     details_url = COALESCE(EXCLUDED.details_url, voice_virtual_agent_calls.details_url),
@@ -203,6 +209,7 @@ def _create_or_update_call(payload: CallUpsertRequest) -> dict[str, Any]:
                 (
                     payload.id,
                     payload.caller,
+                    payload.channel,
                     payload.status,
                     payload.ended_reason,
                     payload.details_url,
@@ -228,6 +235,7 @@ def _patch_call(call_id: str, payload: CallPatchRequest) -> dict[str, Any]:
 
     for field_name in (
         "caller",
+        "channel",
         "status",
         "ended_reason",
         "details_url",

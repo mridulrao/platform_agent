@@ -139,6 +139,45 @@ class VVASessionInfo:
 
         loop.create_task(_do_save())
 
+    async def create_call_record(
+        self,
+        *,
+        room_name: str,
+        agent_name: str | None = None,
+        voice_virtual_agent_id: str | None = None,
+    ) -> None:
+        """Create or upsert the call row when the participant first connects."""
+        if not self.db_proxy or not self.call_id:
+            logger.debug(
+                "Skipping call creation: db_proxy=%s call_id=%s",
+                bool(self.db_proxy),
+                bool(self.call_id),
+            )
+            return
+
+        call_data = {
+            "room_name": room_name,
+            "channel": self.channel,
+            "session_type": self.session_type,
+            "phone_number": self.phone_number if self.channel == "sip" else None,
+        }
+        if agent_name:
+            call_data["agent_name"] = agent_name
+
+        try:
+            await self.db_proxy.create_call(
+                call_id=self.call_id,
+                caller=self.phone_number if self.channel == "sip" else None,
+                channel=self.channel,
+                status="started",
+                called_at=datetime.now().astimezone(),
+                voice_virtual_agent_id=voice_virtual_agent_id,
+                call_data=call_data,
+            )
+            logger.debug("Created call record for call_id=%s", self.call_id)
+        except Exception as e:
+            logger.warning("Failed to create call record: %s", e, exc_info=False)
+
     # -------------------------------------------------------------------------
     # Accessors
     # -------------------------------------------------------------------------

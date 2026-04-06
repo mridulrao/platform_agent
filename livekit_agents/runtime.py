@@ -14,6 +14,7 @@ from livekit_agents.factory import build_llm, build_stt, build_tts, build_vad
 from utils.noise_cancelation.webrtc_ns_module import build_webrtc_noise_canceller
 from utils.proxy.db_proxy import DBProxyClient
 from utils.session.in_call import VVASessionInfo
+from utils.session.post_call import VVAPostCallInfo
 
 logger = logging.getLogger("configurable-livekit-agent")
 
@@ -89,6 +90,10 @@ async def run_agent_session(ctx: JobContext, config: AgentConfig) -> None:
 
     participant = await ctx.wait_for_participant()
     session_info = _build_session_info(ctx, participant)
+    await session_info.create_call_record(
+        room_name=ctx.room.name,
+        agent_name=config.name,
+    )
     session = AgentSession(userdata=session_info)
     session_info.register_conversation_listeners(session)
     agent = ConfigurableVoiceAgent(
@@ -116,8 +121,21 @@ async def run_agent_session(ctx: JobContext, config: AgentConfig) -> None:
     if room_input_options is not None:
         start_kwargs["room_input_options"] = room_input_options
 
+    async def shutdown_task(reason: str):
+        session_info.disconnect_reason = reason
+        post_call_info = VVAPostCallInfo(
+            call_id=session_info.call_id,
+            channel=session_info.channel,
+            phone_number=session_info.phone_number,
+            disconnect_reason=reason,
+            db_proxy=session_info.db_proxy,
+        )
+        await post_call_info.update_call_record_on_end()
+
     await session.start(
         agent=agent,
         room=ctx.room,
         **start_kwargs,
     )
+
+    ctx.add_shutdown_callback(shutdown_task)
