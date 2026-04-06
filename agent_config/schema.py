@@ -22,6 +22,8 @@ class WorkerConfig(BaseModel):
 
 class SessionConfig(BaseModel):
     enable_telephony_noise_cancellation: bool = True
+    noise_cancellation_provider: str = "bvc_telephony"
+    noise_cancellation_kwargs: dict[str, Any] = Field(default_factory=dict)
     kwargs: dict[str, Any] = Field(default_factory=dict)
 
 

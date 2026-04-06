@@ -285,6 +285,16 @@ worker_num_idle_processes = st.number_input("num_idle_processes", min_value=0, v
 
 st.subheader("Session options")
 enable_noise_cancellation = st.checkbox("Enable telephony noise cancellation", value=True)
+noise_cancellation_provider = st.selectbox(
+    "Noise cancellation provider",
+    options=["bvc_telephony", "webrtc_noise_gain"],
+    index=0,
+)
+noise_cancellation_kwargs = st.text_area(
+    "Noise cancellation kwargs (JSON)",
+    value='{"noise_suppression_level": 2, "auto_gain_dbfs": 0}',
+    height=110,
+)
 session_kwargs = st.text_area("session.start kwargs (JSON)", value="{}", height=110)
 
 submitted = st.button("Create agent")
@@ -324,6 +334,10 @@ if submitted:
             ),
             session={
                 "enable_telephony_noise_cancellation": enable_noise_cancellation,
+                "noise_cancellation_provider": noise_cancellation_provider,
+                "noise_cancellation_kwargs": parse_json_dict(
+                    noise_cancellation_kwargs, "Noise cancellation kwargs"
+                ),
                 "kwargs": parse_json_dict(session_kwargs, "Session kwargs"),
             },
         )

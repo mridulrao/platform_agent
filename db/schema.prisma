@@ -2,41 +2,42 @@ datasource db {
   provider = "postgresql"
 }
 
-model voice_virtual_agent_call_status {
-  created_at   DateTime                   @default(now()) @db.Timestamptz(6)
-  call_id      String?                    @db.Uuid
-  content_type String?                    @db.VarChar
-  role         String?                    @db.VarChar
-  content      Json?                      @db.Json
-  id           String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  kb_used      String?                    @db.VarChar
-  call         voice_virtual_agent_calls? @relation(fields: [call_id], references: [id])
+model voice_virtual_agent_call_events {
+  id              String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at      DateTime                   @default(now()) @db.Timestamptz(6)
+  call_id         String                     @db.Uuid
+  sequence_number Int
+  event_type      String                     @default("message") @db.VarChar
+  speaker         String?                    @db.VarChar
+  content_text    String?
+  content_json    Json?                      @db.JsonB
+  metadata        Json?                      @db.JsonB
+  call            voice_virtual_agent_calls  @relation(fields: [call_id], references: [id], onDelete: Cascade)
 
+  @@index([call_id, sequence_number])
   @@index([call_id, created_at])
 }
 
 model voice_virtual_agent_calls {
-  id                              String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  created_at                      DateTime                          @default(now()) @db.Timestamptz(6)
-  caller                          String?
-  ended_reason                    String?
-  details_url                     String?
-  ticket_id                       String?
-  ended_at                        DateTime?                         @db.Timestamptz(6)
-  recordingUrl                    String?                           @db.VarChar
-  status                          String?                           @db.VarChar
-  user_name                       String?                           @db.VarChar
-  user_sys_id                     String?                           @db.VarChar
-  called_at                       String?
-  voice_virtual_agent_id          String?                           @db.Uuid
-  incident_ticket_ids             String[]                          @default([])
-  interaction_id                  String?
-  summary                         String?                           @db.VarChar
-  sentiment                       String?                           @db.VarChar
-  queries                         String?                           @db.VarChar
-  reported_issue                  String?                           @db.VarChar
-  voice_virtual_agent_call_status voice_virtual_agent_call_status[]
-  voice_virtual_agent             voice_virtual_agents?             @relation(fields: [voice_virtual_agent_id], references: [id])
+  id                            String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at                    DateTime                         @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime                         @updatedAt @db.Timestamptz(6)
+  caller                        String?                          @db.VarChar
+  status                        String?                          @db.VarChar
+  ended_reason                  String?                          @db.VarChar
+  details_url                   String?                          @db.VarChar
+  ended_at                      DateTime?                        @db.Timestamptz(6)
+  called_at                     DateTime?                        @db.Timestamptz(6)
+  recording_url                 String?                          @db.VarChar
+  interaction_id                String?                          @db.VarChar
+  voice_virtual_agent_id        String?                          @db.Uuid
+  call_data                     Json?                            @db.JsonB
+  voice_virtual_agent_call_events voice_virtual_agent_call_events[]
+  voice_virtual_agent           voice_virtual_agents?            @relation(fields: [voice_virtual_agent_id], references: [id])
+
+  @@index([created_at])
+  @@index([voice_virtual_agent_id, created_at])
+  @@index([status, created_at])
 }
 
 model voice_virtual_agents {

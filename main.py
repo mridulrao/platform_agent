@@ -1,5 +1,11 @@
+from utils.proxy.db_proxy import build_app
+
+
+app = build_app()
+
+
 def main():
-    print("Hello from voice-agents!")
+    print("Voice Agent DB proxy app loaded. Run with an ASGI server such as uvicorn.")
 
 
 if __name__ == "__main__":

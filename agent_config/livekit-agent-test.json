@@ -48,6 +48,8 @@
   },
   "session": {
     "enable_telephony_noise_cancellation": true,
+    "noise_cancellation_provider": "bvc_telephony",
+    "noise_cancellation_kwargs": {},
     "kwargs": {}
   }
 }
