@@ -198,7 +198,10 @@ agent_phone_number = st.text_input(
 system_prompt = st.text_area("System prompt", height=180)
 tools_raw = st.text_area(
     "Tool import paths (one per line)",
-    value="livekit_agents_tools.session_tools.end_call",
+    value=(
+        "livekit_agents_tools.session_tools.end_call\n"
+        "livekit_agents_tools.session_tools.transfer_call"
+    ),
     height=80,
 )
 
@@ -289,6 +292,11 @@ worker_num_idle_processes = st.number_input("num_idle_processes", min_value=0, v
 
 st.subheader("Session options")
 enable_noise_cancellation = st.checkbox("Enable telephony noise cancellation", value=True)
+transfer_phone_number = st.text_input(
+    "Transfer target phone number (E.164)",
+    value="",
+    help="Optional default destination used by livekit_agents_tools.session_tools.transfer_call.",
+)
 noise_cancellation_provider = st.selectbox(
     "Noise cancellation provider",
     options=["bvc_telephony", "webrtc_noise_gain"],
@@ -344,6 +352,9 @@ if submitted:
                     noise_cancellation_kwargs, "Noise cancellation kwargs"
                 ),
                 "kwargs": parse_json_dict(session_kwargs, "Session kwargs"),
+                "transfer_phone_number": validate_e164(transfer_phone_number)
+                if transfer_phone_number.strip()
+                else None,
             },
         )
         result = create_agent_backend(config, validate_e164(agent_phone_number))

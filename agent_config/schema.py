@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -26,6 +27,19 @@ class SessionConfig(BaseModel):
     noise_cancellation_provider: str = "bvc_telephony"
     noise_cancellation_kwargs: dict[str, Any] = Field(default_factory=dict)
     kwargs: dict[str, Any] = Field(default_factory=dict)
+    transfer_phone_number: str | None = None
+
+    @field_validator("transfer_phone_number")
+    @classmethod
+    def validate_transfer_phone_number(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if not re.fullmatch(r"\+[1-9]\d{1,14}", normalized):
+            raise ValueError("Transfer phone number must be E.164, for example +14155550123.")
+        return normalized
 
 
 class VADConfig(BaseModel):

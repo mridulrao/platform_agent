@@ -40,6 +40,9 @@ class VVASessionInfo:
     # sip details
     org_id: str | None = None
     phone_number: str | None = None
+    room_name: str | None = None
+    sip_participant_identity: str | None = None
+    transfer_phone_number: str | None = None
     session_type: str | None = None # can be sip / webrtc
     channel: str | None = None
 
@@ -176,7 +179,7 @@ class VVASessionInfo:
             )
             logger.debug("Created call record for call_id=%s", self.call_id)
         except Exception as e:
-            logger.warning("Failed to create call record: %s", e, exc_info=False)
+            logger.warning("Failed to create call record: %r", e, exc_info=False)
 
     # -------------------------------------------------------------------------
     # Accessors
@@ -220,18 +223,23 @@ class VVASessionInfo:
         *,
         room_name: str,
         participant_kind: str | None = None,
+        participant_identity: str | None = None,
         attributes: dict[str, Any] | None = None,
     ) -> None:
+        attributes = attributes or {}
         resolved_session_type = self.resolve_session_type(
             participant_kind=participant_kind,
             attributes=attributes,
         )
+        self.room_name = room_name
+        self.sip_participant_identity = participant_identity if resolved_session_type == "sip" else None
         self.session_type = resolved_session_type
         self.channel = resolved_session_type
         self.phone_number = self.resolve_phone_number(
             room_name=room_name,
             attributes=attributes,
         )
+        self.transfer_phone_number = self.resolve_transfer_phone_number(attributes=attributes)
         self.call_id = self.resolve_call_id(
             room_name=room_name,
             attributes=attributes,
@@ -250,6 +258,19 @@ class VVASessionInfo:
             attributes.get("sip.phoneNumber")
             or attributes.get("phone_number")
             or room_phone_number
+            or None
+        )
+
+    def resolve_transfer_phone_number(
+        self,
+        *,
+        attributes: dict[str, Any] | None = None,
+    ) -> str | None:
+        attributes = attributes or {}
+        return (
+            attributes.get("transfer_phone_number")
+            or attributes.get("transfer.phoneNumber")
+            or attributes.get("transfer.to_phone_number")
             or None
         )
 

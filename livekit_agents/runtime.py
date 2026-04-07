@@ -62,8 +62,11 @@ def _build_session_info(
     session_info.set_connection_details(
         room_name=ctx.room.name,
         participant_kind=participant_kind,
+        participant_identity=getattr(participant, "identity", None),
         attributes=attributes,
     )
+    if config.session.transfer_phone_number:
+        session_info.transfer_phone_number = config.session.transfer_phone_number
     session_info.db_proxy = DBProxyClient(base_url=config.worker.db_proxy_url)
     return session_info
 

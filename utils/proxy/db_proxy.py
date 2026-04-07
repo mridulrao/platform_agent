@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from functools import lru_cache
 from datetime import datetime
@@ -15,6 +16,7 @@ from agent_config.store import _get_db_connection, _get_dict_cursor, use_db_back
 
 
 router = APIRouter(prefix="/db-proxy", tags=["db-proxy"])
+logger = logging.getLogger("voice-agent-db-proxy")
 
 
 class CallUpsertRequest(BaseModel):
@@ -62,6 +64,7 @@ class DBProxyClient:
         resolved_base_url = base_url or os.getenv("DB_PROXY_URL") or "http://127.0.0.1:8000"
         self.base_url = resolved_base_url.rstrip("/")
         self.timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        logger.info("DB proxy client configured with base_url=%s", self.base_url)
 
     async def create_call(
         self,
@@ -146,7 +149,10 @@ class DBProxyClient:
         url = f"{self.base_url}{path}"
         async with aiohttp.ClientSession(timeout=self.timeout) as session:
             async with session.request(method, url, json=payload) as response:
-                body = await response.json(content_type=None)
+                try:
+                    body = await response.json(content_type=None)
+                except Exception:
+                    body = await response.text()
                 if response.status >= 400:
                     raise RuntimeError(f"DB proxy request failed ({response.status}): {body}")
                 return body
@@ -480,6 +486,14 @@ def _create_call_event(call_id: str, payload: CallEventCreateRequest) -> dict[st
 
 @router.get("/health")
 def db_proxy_health() -> dict[str, str]:
+    _require_db_backend()
+    try:
+        with _get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Database health check failed: {exc!r}") from exc
     return {"status": "ok"}
 
 

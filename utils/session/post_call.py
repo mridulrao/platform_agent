@@ -44,4 +44,4 @@ class VVAPostCallInfo:
             )
             logger.debug("Updated call record on shutdown for call_id=%s", self.call_id)
         except Exception as e:
-            logger.warning("Failed to update call record on shutdown: %s", e, exc_info=False)
+            logger.warning("Failed to update call record on shutdown: %r", e, exc_info=False)
