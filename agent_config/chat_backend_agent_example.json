@@ -1,12 +1,12 @@
 {
-  "name": "platform_test_2",
+  "name": "platform_agent",
   "system_prompt": "You are a helpful phone assistant. Keep responses concise and natural for a voice call.",
   "llm": {
-    "provider": "openai",
-    "model": "existing-chat-agent",
+    "provider": "azure_openai",
+    "model": "gpt-4.1-mini",
     "kwargs": {
-      "base_url": "http://127.0.0.1:9000/v1",
-      "api_key": "dev-key"
+      "azure_deployment": "gpt-4.1-mini",
+      "api_version": "2024-10-01-preview"
     }
   },
   "stt": {
@@ -40,7 +40,7 @@
     "livekit_agents_tools.session_tools.transfer_call"
   ],
   "worker": {
-    "agent_name": "platform_test_2",
+    "agent_name": "platform_agent",
     "job_memory_warn_mb": 2000,
     "shutdown_process_timeout": 80.0,
     "initialize_process_timeout": 540,
@@ -49,7 +49,7 @@
   },
   "session": {
     "enable_telephony_noise_cancellation": false,
-    "noise_cancellation_provider": "bvc_telephony",
+    "noise_cancellation_provider": "webrtc_noise_gain",
     "noise_cancellation_kwargs": {},
     "kwargs": {},
     "transfer_phone_number": "+14155550123"

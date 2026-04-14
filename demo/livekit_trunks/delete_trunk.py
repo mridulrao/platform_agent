@@ -38,7 +38,7 @@ async def delete_sip_trunk(trunk_id: str):
 
 # Example usage
 async def main():
-    await delete_sip_trunk("ST_uTK2xCSNpCFw")
+    await delete_sip_trunk("ST_gwmRPAwW3nvV")
 
 if __name__ == "__main__":
     asyncio.run(main())
