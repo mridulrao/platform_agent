@@ -34,11 +34,42 @@ model voice_virtual_agent_calls {
   voice_virtual_agent_id        String?                          @db.Uuid
   call_data                     Json?                            @db.JsonB
   voice_virtual_agent_call_events voice_virtual_agent_call_events[]
+  session_observability         voice_virtual_agent_session_observability?
   voice_virtual_agent           voice_virtual_agents?            @relation(fields: [voice_virtual_agent_id], references: [id])
 
   @@index([created_at])
   @@index([voice_virtual_agent_id, created_at])
   @@index([status, created_at])
+}
+
+model voice_virtual_agent_session_observability {
+  id                       String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at               DateTime                  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime                  @updatedAt @db.Timestamptz(6)
+  call_id                  String                    @unique @db.Uuid
+  room_name                String?                   @db.VarChar
+  agent_name               String?                   @db.VarChar
+  started_at               DateTime?                 @db.Timestamptz(6)
+  ended_at                 DateTime?                 @db.Timestamptz(6)
+  disconnect_reason        String?                   @db.VarChar
+  duration_seconds         Float?
+  user_turn_count          Int                       @default(0)
+  assistant_turn_count     Int                       @default(0)
+  usage_update_count       Int                       @default(0)
+  avg_e2e_latency_seconds  Float?
+  max_e2e_latency_seconds  Float?
+  avg_llm_ttft_seconds     Float?
+  avg_tts_ttfb_seconds     Float?
+  usage_summary            Json?                     @db.JsonB
+  llm_token_count          Json?                     @db.JsonB
+  tts_token_count          Json?                     @db.JsonB
+  latency_summary          Json?                     @db.JsonB
+  numeric_usage_totals     Json?                     @db.JsonB
+  metrics_json             Json?                     @db.JsonB
+  call                     voice_virtual_agent_calls @relation(fields: [call_id], references: [id], onDelete: Cascade)
+
+  @@index([created_at])
+  @@index([agent_name, created_at])
 }
 
 model voice_virtual_agents {

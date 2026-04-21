@@ -514,6 +514,24 @@ def get_sip_binding_by_agent_name(agent_name: str) -> dict[str, Any] | None:
             return cur.fetchone()
 
 
+def list_active_sip_bindings() -> list[dict[str, Any]]:
+    if not use_db_backend():
+        return []
+
+    with _get_db_connection() as conn:
+        with _get_dict_cursor(conn) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM voice_virtual_agent_sip_bindings
+                WHERE is_active = true
+                ORDER BY updated_at DESC, created_at DESC
+                """
+            )
+            rows = cur.fetchall()
+    return list(rows)
+
+
 def save_agent_sip_binding_status(
     *,
     agent_name: str,

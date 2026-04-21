@@ -9,10 +9,14 @@ from typing import Any
 from uuid import UUID
 
 import aiohttp
+from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from agent_config.store import _get_db_connection, _get_dict_cursor, use_db_backend
+
+
+load_dotenv()
 
 
 router = APIRouter(prefix="/db-proxy", tags=["db-proxy"])
@@ -57,6 +61,29 @@ class CallEventCreateRequest(BaseModel):
     content_text: str | None = None
     content_json: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
+
+
+class SessionObservabilityUpsertRequest(BaseModel):
+    call_id: str
+    room_name: str | None = None
+    agent_name: str | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    disconnect_reason: str | None = None
+    duration_seconds: float | None = None
+    user_turn_count: int | None = None
+    assistant_turn_count: int | None = None
+    usage_update_count: int | None = None
+    avg_e2e_latency_seconds: float | None = None
+    max_e2e_latency_seconds: float | None = None
+    avg_llm_ttft_seconds: float | None = None
+    avg_tts_ttfb_seconds: float | None = None
+    usage_summary: dict[str, Any] | None = None
+    llm_token_count: dict[str, Any] | None = None
+    tts_token_count: dict[str, Any] | None = None
+    latency_summary: dict[str, Any] | None = None
+    numeric_usage_totals: dict[str, Any] | None = None
+    metrics_json: dict[str, Any] | None = None
 
 
 class DBProxyClient:
@@ -144,6 +171,54 @@ class DBProxyClient:
             content_text=content,
             metadata=merged_metadata or None,
         )
+
+    async def save_session_observability(
+        self,
+        *,
+        call_id: str,
+        room_name: str | None = None,
+        agent_name: str | None = None,
+        started_at: datetime | None = None,
+        ended_at: datetime | None = None,
+        disconnect_reason: str | None = None,
+        duration_seconds: float | None = None,
+        user_turn_count: int | None = None,
+        assistant_turn_count: int | None = None,
+        usage_update_count: int | None = None,
+        avg_e2e_latency_seconds: float | None = None,
+        max_e2e_latency_seconds: float | None = None,
+        avg_llm_ttft_seconds: float | None = None,
+        avg_tts_ttfb_seconds: float | None = None,
+        usage_summary: dict[str, Any] | None = None,
+        llm_token_count: dict[str, Any] | None = None,
+        tts_token_count: dict[str, Any] | None = None,
+        latency_summary: dict[str, Any] | None = None,
+        numeric_usage_totals: dict[str, Any] | None = None,
+        metrics_json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        payload = SessionObservabilityUpsertRequest(
+            call_id=call_id,
+            room_name=room_name,
+            agent_name=agent_name,
+            started_at=started_at,
+            ended_at=ended_at,
+            disconnect_reason=disconnect_reason,
+            duration_seconds=duration_seconds,
+            user_turn_count=user_turn_count,
+            assistant_turn_count=assistant_turn_count,
+            usage_update_count=usage_update_count,
+            avg_e2e_latency_seconds=avg_e2e_latency_seconds,
+            max_e2e_latency_seconds=max_e2e_latency_seconds,
+            avg_llm_ttft_seconds=avg_llm_ttft_seconds,
+            avg_tts_ttfb_seconds=avg_tts_ttfb_seconds,
+            usage_summary=usage_summary,
+            llm_token_count=llm_token_count,
+            tts_token_count=tts_token_count,
+            latency_summary=latency_summary,
+            numeric_usage_totals=numeric_usage_totals,
+            metrics_json=metrics_json,
+        ).model_dump(mode="json", exclude_none=True)
+        return await self._request("POST", f"/db-proxy/calls/{call_id}/observability", payload)
 
     async def _request(self, method: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
@@ -484,6 +559,156 @@ def _create_call_event(call_id: str, payload: CallEventCreateRequest) -> dict[st
             return row
 
 
+def _ensure_session_observability_table(cur) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS voice_virtual_agent_session_observability (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            created_at TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ(6) NOT NULL DEFAULT now(),
+            call_id UUID NOT NULL UNIQUE REFERENCES voice_virtual_agent_calls(id) ON DELETE CASCADE,
+            room_name VARCHAR,
+            agent_name VARCHAR,
+            started_at TIMESTAMPTZ(6),
+            ended_at TIMESTAMPTZ(6),
+            disconnect_reason VARCHAR,
+            duration_seconds DOUBLE PRECISION,
+            user_turn_count INTEGER NOT NULL DEFAULT 0,
+            assistant_turn_count INTEGER NOT NULL DEFAULT 0,
+            usage_update_count INTEGER NOT NULL DEFAULT 0,
+            avg_e2e_latency_seconds DOUBLE PRECISION,
+            max_e2e_latency_seconds DOUBLE PRECISION,
+            avg_llm_ttft_seconds DOUBLE PRECISION,
+            avg_tts_ttfb_seconds DOUBLE PRECISION,
+            usage_summary JSONB,
+            llm_token_count JSONB,
+            tts_token_count JSONB,
+            latency_summary JSONB,
+            numeric_usage_totals JSONB,
+            metrics_json JSONB
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_vva_session_observability_created_at
+        ON voice_virtual_agent_session_observability (created_at)
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_vva_session_observability_agent_name_created_at
+        ON voice_virtual_agent_session_observability (agent_name, created_at)
+        """
+    )
+    cur.execute(
+        """
+        ALTER TABLE voice_virtual_agent_session_observability
+        ADD COLUMN IF NOT EXISTS llm_token_count JSONB
+        """
+    )
+    cur.execute(
+        """
+        ALTER TABLE voice_virtual_agent_session_observability
+        ADD COLUMN IF NOT EXISTS tts_token_count JSONB
+        """
+    )
+
+
+def _upsert_session_observability(call_id: str, payload: SessionObservabilityUpsertRequest) -> dict[str, Any]:
+    _require_db_backend()
+
+    columns = set(_get_table_columns("voice_virtual_agent_calls"))
+
+    with _get_db_connection() as conn:
+        with _get_dict_cursor(conn) as cur:
+            call_row = _find_call_row(cur, call_id, columns)
+            if call_row is None:
+                raise HTTPException(status_code=404, detail=f"Call '{call_id}' was not found.")
+
+            _ensure_session_observability_table(cur)
+
+            cur.execute(
+                """
+                INSERT INTO voice_virtual_agent_session_observability (
+                    call_id,
+                    room_name,
+                    agent_name,
+                    started_at,
+                    ended_at,
+                    disconnect_reason,
+                    duration_seconds,
+                    user_turn_count,
+                    assistant_turn_count,
+                    usage_update_count,
+                    avg_e2e_latency_seconds,
+                    max_e2e_latency_seconds,
+                    avg_llm_ttft_seconds,
+                    avg_tts_ttfb_seconds,
+                    usage_summary,
+                    llm_token_count,
+                    tts_token_count,
+                    latency_summary,
+                    numeric_usage_totals,
+                    metrics_json
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb
+                )
+                ON CONFLICT (call_id)
+                DO UPDATE SET
+                    updated_at = now(),
+                    room_name = EXCLUDED.room_name,
+                    agent_name = EXCLUDED.agent_name,
+                    started_at = EXCLUDED.started_at,
+                    ended_at = EXCLUDED.ended_at,
+                    disconnect_reason = EXCLUDED.disconnect_reason,
+                    duration_seconds = EXCLUDED.duration_seconds,
+                    user_turn_count = EXCLUDED.user_turn_count,
+                    assistant_turn_count = EXCLUDED.assistant_turn_count,
+                    usage_update_count = EXCLUDED.usage_update_count,
+                    avg_e2e_latency_seconds = EXCLUDED.avg_e2e_latency_seconds,
+                    max_e2e_latency_seconds = EXCLUDED.max_e2e_latency_seconds,
+                    avg_llm_ttft_seconds = EXCLUDED.avg_llm_ttft_seconds,
+                    avg_tts_ttfb_seconds = EXCLUDED.avg_tts_ttfb_seconds,
+                    usage_summary = EXCLUDED.usage_summary,
+                    llm_token_count = EXCLUDED.llm_token_count,
+                    tts_token_count = EXCLUDED.tts_token_count,
+                    latency_summary = EXCLUDED.latency_summary,
+                    numeric_usage_totals = EXCLUDED.numeric_usage_totals,
+                    metrics_json = EXCLUDED.metrics_json
+                RETURNING *
+                """,
+                (
+                    call_row["id"],
+                    payload.room_name,
+                    payload.agent_name,
+                    payload.started_at,
+                    payload.ended_at,
+                    payload.disconnect_reason,
+                    payload.duration_seconds,
+                    payload.user_turn_count or 0,
+                    payload.assistant_turn_count or 0,
+                    payload.usage_update_count or 0,
+                    payload.avg_e2e_latency_seconds,
+                    payload.max_e2e_latency_seconds,
+                    payload.avg_llm_ttft_seconds,
+                    payload.avg_tts_ttfb_seconds,
+                    json.dumps(payload.usage_summary) if payload.usage_summary is not None else None,
+                    json.dumps(payload.llm_token_count) if payload.llm_token_count is not None else None,
+                    json.dumps(payload.tts_token_count) if payload.tts_token_count is not None else None,
+                    json.dumps(payload.latency_summary) if payload.latency_summary is not None else None,
+                    json.dumps(payload.numeric_usage_totals) if payload.numeric_usage_totals is not None else None,
+                    json.dumps(payload.metrics_json) if payload.metrics_json is not None else None,
+                ),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise HTTPException(status_code=500, detail="Failed to persist session observability.")
+            return row
+
+
 @router.get("/health")
 def db_proxy_health() -> dict[str, str]:
     _require_db_backend()
@@ -510,6 +735,14 @@ def patch_call(call_id: str, payload: CallPatchRequest) -> dict[str, Any]:
 @router.post("/calls/{call_id}/events")
 def create_call_event(call_id: str, payload: CallEventCreateRequest) -> dict[str, Any]:
     return _create_call_event(call_id, payload)
+
+
+@router.post("/calls/{call_id}/observability")
+def upsert_session_observability(
+    call_id: str,
+    payload: SessionObservabilityUpsertRequest,
+) -> dict[str, Any]:
+    return _upsert_session_observability(call_id, payload)
 
 
 def build_app() -> FastAPI:

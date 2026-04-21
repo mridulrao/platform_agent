@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -33,7 +32,6 @@ def _coerce_content_to_text(raw_content: Any) -> str:
                 chunks.append(str(text_attr))
         return " ".join(chunk.strip() for chunk in chunks if chunk).strip()
     return str(raw_content)
-
 
 @dataclass
 class VVASessionInfo:

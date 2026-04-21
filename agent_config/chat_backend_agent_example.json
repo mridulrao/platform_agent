@@ -1,5 +1,5 @@
 {
-  "name": "platform_agent",
+  "name": "platform_agent_2",
   "system_prompt": "You are a helpful phone assistant. Keep responses concise and natural for a voice call.",
   "llm": {
     "provider": "azure_openai",
@@ -40,7 +40,7 @@
     "livekit_agents_tools.session_tools.transfer_call"
   ],
   "worker": {
-    "agent_name": "platform_agent",
+    "agent_name": "platform_agent_2",
     "job_memory_warn_mb": 2000,
     "shutdown_process_timeout": 80.0,
     "initialize_process_timeout": 540,

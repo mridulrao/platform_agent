@@ -11,6 +11,7 @@ from livekit.plugins import noise_cancellation
 from agent_config.schema import AgentConfig
 from livekit_agents.base_agent import BaseAgent
 from livekit_agents.factory import build_llm, build_stt, build_tts, build_vad
+from utils.observability import SessionObservability
 from utils.noise_cancelation.webrtc_ns_module import build_webrtc_noise_canceller
 from utils.proxy.db_proxy import DBProxyClient
 from utils.session.in_call import VVASessionInfo
@@ -100,6 +101,13 @@ async def run_agent_session(ctx: JobContext, config: AgentConfig) -> None:
     )
     session = AgentSession(userdata=session_info)
     session_info.register_conversation_listeners(session)
+    observability = SessionObservability(
+        call_id=session_info.call_id,
+        room_name=ctx.room.name,
+        agent_name=config.name,
+        db_proxy=session_info.db_proxy,
+    )
+    observability.register(session)
     agent = ConfigurableVoiceAgent(
         config=config,
         vad_instance=build_vad(config),
@@ -127,6 +135,8 @@ async def run_agent_session(ctx: JobContext, config: AgentConfig) -> None:
 
     async def shutdown_task(reason: str):
         session_info.disconnect_reason = reason
+        observability.finalize(reason)
+        await observability.flush()
         post_call_info = VVAPostCallInfo(
             call_id=session_info.call_id,
             channel=session_info.channel,
@@ -136,10 +146,10 @@ async def run_agent_session(ctx: JobContext, config: AgentConfig) -> None:
         )
         await post_call_info.update_call_record_on_end()
 
+    ctx.add_shutdown_callback(shutdown_task)
+
     await session.start(
         agent=agent,
         room=ctx.room,
         **start_kwargs,
     )
-
-    ctx.add_shutdown_callback(shutdown_task)
