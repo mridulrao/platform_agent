@@ -1,0 +1,3 @@
+display_name: Agreement Generator
+short_description: Creates a sample agreement for a named user and saves it locally.
+default_prompt: Generate a short sample agreement for the provided user name and save it as a local file.

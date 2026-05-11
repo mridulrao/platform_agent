@@ -10,7 +10,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "kubernetes>=32.0.0",
     "livekit>=1.0.8",
-    "livekit-agents>=1.2.2",
+    "livekit-agents>=1.5.2",
     "livekit-plugins-cartesia>=1.2.2",
     "livekit-plugins-deepgram>=1.2.2",
     "livekit-plugins-elevenlabs>=1.2.2",
@@ -46,6 +46,7 @@ include = [
     "livekit_agents*",
     "livekit_agents_tools*",
     "livekit_trunks*",
+    "skill_jobs*",
     "scripts*",
     "utils*",
 ]

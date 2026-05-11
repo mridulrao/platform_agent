@@ -55,6 +55,7 @@ class AgentConfig(BaseModel):
     tts: ProviderConfig
     vad: VADConfig = Field(default_factory=VADConfig)
     tools: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
     worker: WorkerConfig = Field(default_factory=WorkerConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
 

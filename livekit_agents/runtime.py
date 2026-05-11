@@ -38,6 +38,23 @@ def load_tools(tool_paths: list[str]) -> list[Any]:
     return loaded_tools
 
 
+def load_skills(skill_paths: list[str]) -> list[Any]:
+    loaded_skills: list[Any] = []
+    for skill_path in skill_paths:
+        module_path, sep, attr_name = skill_path.rpartition(".")
+        if not sep:
+            raise ValueError(
+                f"Invalid skill path '{skill_path}'. Use a full import path like "
+                "'livekit_agents_tools.skill_dispatch_toolset.build_skill_dispatch_toolset'."
+            )
+        module = importlib.import_module(module_path)
+        builder = getattr(module, attr_name)
+        toolset = builder() if callable(builder) else builder
+        if toolset is not None:
+            loaded_skills.append(toolset)
+    return loaded_skills
+
+
 def _participant_attributes(participant: rtc.RemoteParticipant | None) -> dict[str, str]:
     attributes = getattr(participant, "attributes", None) if participant else None
     if not isinstance(attributes, dict):
@@ -99,7 +116,8 @@ async def run_agent_session(ctx: JobContext, config: AgentConfig) -> None:
         room_name=ctx.room.name,
         agent_name=config.name,
     )
-    session = AgentSession(userdata=session_info)
+    session_toolsets = load_skills(config.skills)
+    session = AgentSession(userdata=session_info, tools=session_toolsets)
     session_info.register_conversation_listeners(session)
     observability = SessionObservability(
         call_id=session_info.call_id,

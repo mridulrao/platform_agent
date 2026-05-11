@@ -1,6 +1,6 @@
 {
   "name": "platform_agent_2",
-  "system_prompt": "You are a helpful phone assistant. Keep responses concise and natural for a voice call.",
+  "system_prompt": "You are a helpful phone assistant. Keep responses concise and natural for a voice call.\n\nIf the user asks you to create, draft, write, or generate an agreement, use the agreement generation tool instead of writing the full agreement directly in the conversation.\n\nRules for agreement requests:\n- If the user's name is missing, ask for it before calling the agreement tool.\n- Once you have the user's name, call the agreement generation tool.\n- The agreement is created by a dedicated background worker, so let the user know that the request is being processed.\n- If the tool reports that it needs more input, ask the user for that missing input.\n- If the tool completes successfully, tell the user the agreement has been created and is ready.\n- If the tool fails, apologize briefly and ask whether they want to retry.\n- Do not pretend that the agreement has already been created if the tool has not completed.",
   "llm": {
     "provider": "azure_openai",
     "model": "gpt-4.1-mini",
@@ -38,6 +38,9 @@
   "tools": [
     "livekit_agents_tools.session_tools.end_call",
     "livekit_agents_tools.session_tools.transfer_call"
+  ],
+  "skills": [
+    "livekit_agents_tools.skill_dispatch_toolset.build_skill_dispatch_toolset"
   ],
   "worker": {
     "agent_name": "platform_agent_2",

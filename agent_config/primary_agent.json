@@ -33,6 +33,7 @@
     }
   },
   "tools": [],
+  "skills": [],
   "worker": {
     "agent_name": "inbound_agent",
     "job_memory_warn_mb": 2000,

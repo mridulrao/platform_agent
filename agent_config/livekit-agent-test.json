@@ -38,6 +38,7 @@
   "tools": [
     "livekit_agents_tools.session_tools.end_call"
   ],
+  "skills": [],
   "worker": {
     "agent_name": "livekit-agent-test",
     "job_memory_warn_mb": 2000,

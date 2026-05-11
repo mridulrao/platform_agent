@@ -204,6 +204,12 @@ tools_raw = st.text_area(
     ),
     height=80,
 )
+skills_raw = st.text_area(
+    "Skill import paths (one per line)",
+    value="livekit_agents_tools.skill_dispatch_toolset.build_skill_dispatch_toolset",
+    height=80,
+    help="Use builder paths for background skills that should be attached at the AgentSession level.",
+)
 
 st.subheader("LLM")
 llm_provider = st.selectbox(
@@ -317,6 +323,7 @@ if submitted:
             name=name,
             system_prompt=system_prompt,
             tools=[line.strip() for line in tools_raw.splitlines() if line.strip()],
+            skills=[line.strip() for line in skills_raw.splitlines() if line.strip()],
             llm=ProviderConfig(
                 provider=llm_provider,
                 model=llm_model or None,
