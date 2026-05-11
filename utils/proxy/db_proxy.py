@@ -745,6 +745,191 @@ def upsert_session_observability(
     return _upsert_session_observability(call_id, payload)
 
 
+# =============================================================================
+# SIP Provisioning Endpoints
+# =============================================================================
+
+
+class SIPProvisionRequest(BaseModel):
+    """Request to provision an inbound SIP trunk + dispatch rule for an agent."""
+    agent_name: str
+    phone_number: str
+    trunk_friendly_name: str | None = None
+    dispatch_rule_name: str | None = None
+    room_prefix: str = "inbound"
+    hide_phone_number: bool = False
+
+
+class SIPDeprovisionRequest(BaseModel):
+    """Request to deprovision a SIP trunk."""
+    trunk_id: str
+    dispatch_rule_id: str | None = None
+
+
+@router.post("/sip/provision")
+async def provision_sip(payload: SIPProvisionRequest) -> dict[str, Any]:
+    """Provision an inbound SIP trunk and dispatch rule via LiveKit API.
+
+    Called by TechOps when a SuperAdmin assigns a phone number to a VVA.
+    """
+    import asyncio
+    from agent_config.schema import SIPProvisionConfig
+    from agent_config.store import (
+        get_sip_binding_by_agent_name,
+        get_sip_binding_by_phone_number,
+        load_agent_config,
+        save_agent_sip_binding_status,
+    )
+    from livekit_trunks.provision import provision_inbound_sip_for_agent
+
+    _require_db_backend()
+
+    agent_name = payload.agent_name.strip()
+    phone_number = payload.phone_number.strip()
+    trunk_name = payload.trunk_friendly_name or f"{agent_name}-trunk"
+    dispatch_name = payload.dispatch_rule_name or f"{agent_name}-dispatch"
+
+    # Validate: phone not already assigned to another agent
+    existing_phone = get_sip_binding_by_phone_number(phone_number)
+    if existing_phone and existing_phone.get("agent_name") != agent_name and existing_phone.get("is_active"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Phone number {phone_number} is already assigned to agent '{existing_phone.get('agent_name')}'.",
+        )
+
+    # Validate: agent not already bound to a different phone
+    existing_agent = get_sip_binding_by_agent_name(agent_name)
+    if existing_agent and existing_agent.get("phone_number") != phone_number and existing_agent.get("is_active"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Agent '{agent_name}' already has SIP binding for phone '{existing_agent.get('phone_number')}'.",
+        )
+
+    sip_config = SIPProvisionConfig(
+        phone_number=phone_number,
+        trunk_friendly_name=trunk_name,
+        dispatch_rule_name=dispatch_name,
+        room_prefix=payload.room_prefix,
+        hide_phone_number=payload.hide_phone_number,
+    )
+
+    # Resolve dispatch agent name from config
+    try:
+        config = load_agent_config(agent_name)
+        dispatch_agent_name = config.worker.agent_name or config.name
+    except Exception:
+        dispatch_agent_name = agent_name
+
+    # Record provisioning started
+    save_agent_sip_binding_status(
+        agent_name=agent_name,
+        phone_number=phone_number,
+        trunk_name=trunk_name,
+        dispatch_rule_name=dispatch_name,
+        room_prefix=payload.room_prefix,
+        desired_state="provisioned",
+        workflow_status="provisioning",
+        health_status="unknown",
+        status_reason="provisioning_started",
+        status_details={"hide_phone_number": payload.hide_phone_number},
+        event_type="sip_provisioning_started",
+        event_message=f"Started SIP provisioning for {agent_name}.",
+    )
+
+    try:
+        result = await provision_inbound_sip_for_agent(
+            agent_name, sip_config, dispatch_agent_name=dispatch_agent_name
+        )
+    except Exception as exc:
+        save_agent_sip_binding_status(
+            agent_name=agent_name,
+            phone_number=phone_number,
+            trunk_name=trunk_name,
+            dispatch_rule_name=dispatch_name,
+            room_prefix=payload.room_prefix,
+            desired_state="provisioned",
+            workflow_status="failed",
+            health_status="unhealthy",
+            last_error=str(exc),
+            status_reason="provisioning_failed",
+            status_details={"hide_phone_number": payload.hide_phone_number},
+            event_type="sip_provisioning_failed",
+            event_message=str(exc),
+        )
+        raise HTTPException(status_code=502, detail=f"LiveKit SIP provisioning failed: {exc}")
+
+    # Record success
+    save_agent_sip_binding_status(
+        agent_name=agent_name,
+        phone_number=phone_number,
+        trunk_name=trunk_name,
+        dispatch_rule_name=dispatch_name,
+        room_prefix=payload.room_prefix,
+        desired_state="provisioned",
+        workflow_status="provisioned",
+        health_status="healthy",
+        trunk_id=result.get("trunk_id"),
+        dispatch_rule_id=result.get("dispatch_rule_id"),
+        status_reason="provisioned",
+        status_details={"hide_phone_number": payload.hide_phone_number},
+        event_type="sip_provisioned",
+        event_message=f"SIP trunk and dispatch rule created for {agent_name}.",
+    )
+
+    return {
+        "agent_name": agent_name,
+        "phone_number": phone_number,
+        "trunk_id": result.get("trunk_id"),
+        "dispatch_rule_id": result.get("dispatch_rule_id"),
+        "workflow_status": "provisioned",
+    }
+
+
+@router.post("/sip/deprovision")
+async def deprovision_sip(payload: SIPDeprovisionRequest) -> dict[str, Any]:
+    """Delete a SIP trunk (and optionally dispatch rule) via LiveKit API.
+
+    Called by TechOps when a SuperAdmin removes a phone number from a VVA.
+    """
+    from livekit import api
+    from livekit.protocol.sip import DeleteSIPTrunkRequest
+
+    livekit_api = api.LiveKitAPI()
+    errors = []
+
+    try:
+        await livekit_api.sip.delete_sip_trunk(
+            DeleteSIPTrunkRequest(sip_trunk_id=payload.trunk_id)
+        )
+    except Exception as exc:
+        errors.append(f"Failed to delete trunk {payload.trunk_id}: {exc}")
+
+    # Dispatch rule deletion if provided
+    if payload.dispatch_rule_id:
+        try:
+            from livekit.protocol.sip import DeleteSIPDispatchRuleRequest
+            await livekit_api.sip.delete_sip_dispatch_rule(
+                DeleteSIPDispatchRuleRequest(sip_dispatch_rule_id=payload.dispatch_rule_id)
+            )
+        except Exception as exc:
+            errors.append(f"Failed to delete dispatch rule {payload.dispatch_rule_id}: {exc}")
+
+    await livekit_api.aclose()
+
+    if errors:
+        return {"status": "partial", "errors": errors}
+
+    return {"status": "deleted", "trunk_id": payload.trunk_id}
+
+
+@router.get("/sip/bindings")
+def list_sip_bindings() -> list[dict[str, Any]]:
+    """List all active SIP bindings."""
+    from agent_config.store import list_active_sip_bindings
+    _require_db_backend()
+    return list_active_sip_bindings()
+
+
 def build_app() -> FastAPI:
     app = FastAPI(title="Voice Agent DB Proxy")
     app.include_router(router)

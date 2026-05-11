@@ -103,7 +103,10 @@ class ConfigurableVoiceAgent(BaseAgent):
         self.config = config
 
     async def on_enter(self) -> None:
-        await self.session.say(f"Hello, this is {self.config.name.replace('_', ' ')}.")
+        greeting = self.config.session.greeting_message
+        if not greeting:
+            greeting = f"Hello, this is {self.config.name.replace('_', ' ')}."
+        await self.session.say(greeting)
 
 
 async def run_agent_session(ctx: JobContext, config: AgentConfig) -> None:

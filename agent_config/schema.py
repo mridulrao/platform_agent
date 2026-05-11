@@ -28,6 +28,7 @@ class SessionConfig(BaseModel):
     noise_cancellation_kwargs: dict[str, Any] = Field(default_factory=dict)
     kwargs: dict[str, Any] = Field(default_factory=dict)
     transfer_phone_number: str | None = None
+    greeting_message: str | None = None
 
     @field_validator("transfer_phone_number")
     @classmethod
