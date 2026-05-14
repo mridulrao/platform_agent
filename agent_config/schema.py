@@ -48,6 +48,21 @@ class VADConfig(BaseModel):
     kwargs: dict[str, Any] = Field(default_factory=dict)
 
 
+class DatasetConfig(BaseModel):
+    dataset_id: str
+    name: str = ""
+    rag_config: dict[str, Any] = Field(default_factory=lambda: {
+        "enabled": True, "top_k": 5, "min_similarity": 0.5,
+    })
+
+
+class MCPServerConfig(BaseModel):
+    mcp_server_id: str
+    name: str = ""
+    allowed_tools: list[str] = Field(default_factory=list)
+    tools: list[dict[str, Any]] = Field(default_factory=list)  # Cached tool schemas
+
+
 class AgentConfig(BaseModel):
     name: str = Field(..., min_length=1)
     system_prompt: str = Field(..., min_length=1)
@@ -59,6 +74,8 @@ class AgentConfig(BaseModel):
     skills: list[str] = Field(default_factory=list)
     worker: WorkerConfig = Field(default_factory=WorkerConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
+    datasets: list[DatasetConfig] = Field(default_factory=list)
+    mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod

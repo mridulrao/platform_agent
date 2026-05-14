@@ -48,6 +48,10 @@ class VVASessionInfo:
     user_sys_id: str | None = None
     full_name: str | None = None
 
+    # RAG / knowledge base
+    datasets: List[Dict[str, Any]] = field(default_factory=list)
+    rag_api_url: str | None = None
+
     # conversation tracking
     conversation_history: List[Dict[str, Any]] = field(default_factory=list)
     user_transcripts: List[Dict[str, Any]] = field(default_factory=list)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 from typing import Any
 
 from livekit import rtc
@@ -86,11 +87,28 @@ def _build_session_info(
     if config.session.transfer_phone_number:
         session_info.transfer_phone_number = config.session.transfer_phone_number
     session_info.db_proxy = DBProxyClient(base_url=config.worker.db_proxy_url)
+
+    # RAG datasets
+    if config.datasets:
+        session_info.datasets = [
+            {"dataset_id": ds.dataset_id, "name": ds.name, "rag_config": ds.rag_config}
+            for ds in config.datasets
+        ]
+        session_info.rag_api_url = os.getenv("TECHOPS_RAG_API_URL") or os.getenv("PLATFORM_AGENT_PROXY_URL") or config.worker.db_proxy_url
+
     return session_info
 
 
 class ConfigurableVoiceAgent(BaseAgent):
     def __init__(self, config: AgentConfig, vad_instance) -> None:
+        # Load standard tools + MCP proxy tools
+        agent_tools = load_tools(config.tools)
+        if config.mcp_servers:
+            from livekit_agents_tools.mcp_proxy_tool import build_mcp_proxy_tools
+            agent_tools.extend(build_mcp_proxy_tools(
+                [s.model_dump() if hasattr(s, "model_dump") else s for s in config.mcp_servers]
+            ))
+
         super().__init__(
             agent_name=config.name,
             instructions=config.system_prompt,
@@ -98,7 +116,7 @@ class ConfigurableVoiceAgent(BaseAgent):
             llm=build_llm(config),
             tts=build_tts(config),
             vad=vad_instance,
-            tools=load_tools(config.tools),
+            tools=agent_tools,
         )
         self.config = config
 
