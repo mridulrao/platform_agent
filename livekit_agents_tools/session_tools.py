@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from typing import Any
 
@@ -70,67 +71,133 @@ def _transfer_destination_from_context(context: RunContext) -> str | None:
     return getattr(userdata, "transfer_phone_number", None)
 
 
-@function_tool    
-async def end_call(context: RunContext):    
-    """    
-    Use this function to end the call
-    """   
-    # Wait for the agent's speech to complete before ending the call  
-    await context.wait_for_playout()  
-      
+@function_tool
+async def end_call(context: RunContext):
+    """
+    Gracefully end the current call by deleting the LiveKit room.
+    This sends SIP BYE to the carrier, terminating the PSTN leg.
+    """
+    await context.wait_for_playout()
+
     room_name = _room_name(context)
-  
-    async with api.LiveKitAPI() as livekit_api:  
-        await livekit_api.room.delete_room(  
-            api.DeleteRoomRequest(room=room_name))  
-        print("Room deleted successfully")  
-  
+
+    try:
+        async with api.LiveKitAPI() as livekit_api:
+            await livekit_api.room.delete_room(
+                api.DeleteRoomRequest(room=room_name))
+            logger.info("Room %s deleted — SIP call terminated.", room_name)
+    except Exception as exc:
+        logger.warning("Failed to delete room %s: %s", room_name, exc)
+        return "Could not end the call."
+
     return True
 
-@function_tool    
-async def transfer_call(context: RunContext, transfer_to: str | None = None):    
-    """    
-    Transfer the current SIP call to the UI-provided E.164 phone number using SIP REFER.
-    """   
+@function_tool
+async def transfer_call(context: RunContext, transfer_to: str | None = None):
+    """
+    Transfer the current SIP call to another phone number.
+    Uses outbound trunk dial-in when SIP_OUTBOUND_TRUNK_ID is set (preferred),
+    otherwise falls back to SIP REFER.
+    """
     userdata = _session_userdata(context)
     if userdata is not None and getattr(userdata, "channel", None) != "sip":
         return "Only SIP calls can be transferred."
 
+    # Resolve destination: explicit arg (only if valid E.164) > config > env
+    # LLM sometimes passes descriptive text like "human agent" — ignore non-phone values
+    valid_transfer_to = transfer_to if transfer_to and _E164_RE.fullmatch(transfer_to.strip()) else None
+    raw_destination = (
+        valid_transfer_to
+        or _transfer_destination_from_context(context)
+        or os.getenv("SIP_TRANSFER_TO", "")
+    )
     try:
-        destination = _normalize_transfer_destination(
-            transfer_to or _transfer_destination_from_context(context) or ""
-        )
+        destination = _normalize_transfer_destination(raw_destination)
         room_name = _room_name(context)
-        participant_identity = _sip_participant_identity(context)
     except ValueError as exc:
         return str(exc)
     except RuntimeError as exc:
         logger.warning("Could not prepare SIP transfer: %s", exc)
         return "Could not transfer the call."
 
-    await context.wait_for_playout()  
+    await context.wait_for_playout()
 
-    try:
-        async with api.LiveKitAPI() as livekit_api:
-            await livekit_api.sip.transfer_sip_participant(
-                TransferSIPParticipantRequest(
-                    room_name=room_name,
-                    participant_identity=participant_identity,
-                    transfer_to=destination,
-                    play_dialtone=False,
+    sip_outbound_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID", "")
+
+    if sip_outbound_trunk_id:
+        # Preferred: dial destination into the room via outbound trunk,
+        # then agent leaves — caller and destination stay bridged.
+        from livekit.protocol.sip import CreateSIPParticipantRequest
+        from google.protobuf.duration_pb2 import Duration
+
+        # Extract plain phone number for sip_call_to
+        sip_call_to = raw_destination.replace("tel:", "").replace("sip:", "").strip()
+        ringing_timeout = Duration(seconds=int(os.getenv("SIP_TRANSFER_RING_TIMEOUT_SECONDS", "30")))
+
+        logger.info("Dialing %s into room %s via outbound trunk %s", sip_call_to, room_name, sip_outbound_trunk_id)
+
+        # Step 1: Dial destination into the room
+        try:
+            livekit_api = api.LiveKitAPI()
+            try:
+                await livekit_api.sip.create_sip_participant(
+                    CreateSIPParticipantRequest(
+                        sip_trunk_id=sip_outbound_trunk_id,
+                        sip_call_to=sip_call_to,
+                        room_name=room_name,
+                        participant_identity=f"transfer_{sip_call_to}",
+                        participant_name="Transfer Destination",
+                        play_ringtone=True,
+                        wait_until_answered=True,
+                        ringing_timeout=ringing_timeout,
+                    )
                 )
-            )
-    except Exception as exc:
-        metadata = getattr(exc, "metadata", None) or {}
-        if metadata:
-            logger.warning(
-                "SIP transfer failed: status_code=%s status=%s",
-                metadata.get("sip_status_code"),
-                metadata.get("sip_status"),
-            )
-        else:
-            logger.warning("SIP transfer failed: %s", exc)
-        return "Could not transfer the call."
+            finally:
+                await livekit_api.aclose()
+        except Exception as exc:
+            logger.warning("Outbound trunk transfer failed: %s", exc)
+            return "Could not transfer the call."
 
-    logger.info("Transferred SIP participant %s in room %s to %s", participant_identity, room_name, destination)
+        # Step 2: Transfer succeeded — mark as forwarded and agent leaves.
+        # Errors here are non-fatal (caller is already connected to destination).
+        logger.info("Transfer destination answered. Agent leaving room %s.", room_name)
+        if userdata is not None:
+            userdata.disconnect_reason = "assistant-forwarded-call"
+        try:
+            room = getattr(userdata, "room", None) if userdata else None
+            if room is not None:
+                await room.disconnect()
+        except Exception as exc:
+            logger.debug("Agent disconnect after transfer (non-fatal): %s", exc)
+    else:
+        # Fallback: SIP REFER
+        try:
+            participant_identity = _sip_participant_identity(context)
+        except RuntimeError as exc:
+            logger.warning("Could not resolve SIP participant: %s", exc)
+            return "Could not transfer the call."
+
+        try:
+            async with api.LiveKitAPI() as livekit_api:
+                await livekit_api.sip.transfer_sip_participant(
+                    TransferSIPParticipantRequest(
+                        room_name=room_name,
+                        participant_identity=participant_identity,
+                        transfer_to=destination,
+                        play_dialtone=False,
+                    )
+                )
+        except Exception as exc:
+            metadata = getattr(exc, "metadata", None) or {}
+            if metadata:
+                logger.warning(
+                    "SIP REFER transfer failed: status_code=%s status=%s",
+                    metadata.get("sip_status_code"),
+                    metadata.get("sip_status"),
+                )
+            else:
+                logger.warning("SIP REFER transfer failed: %s", exc)
+            return "Could not transfer the call."
+
+    logger.info("Transferred call in room %s to %s", room_name, raw_destination)
     return True

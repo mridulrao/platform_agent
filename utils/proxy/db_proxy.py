@@ -922,6 +922,47 @@ async def deprovision_sip(payload: SIPDeprovisionRequest) -> dict[str, Any]:
     return {"status": "deleted", "trunk_id": payload.trunk_id}
 
 
+class SIPOutboundTrunkRequest(BaseModel):
+    agent_name: str
+    trunk_name: str
+    address: str
+    numbers: list[str]
+    auth_username: str = ""
+    auth_password: str = ""
+
+
+@router.post("/sip/create-outbound-trunk")
+async def create_outbound_trunk(payload: SIPOutboundTrunkRequest) -> dict[str, Any]:
+    """Create an outbound SIP trunk for call transfers via LiveKit API.
+
+    Called by TechOps when a VVA has transfer_call enabled with SIP outbound credentials.
+    """
+    from livekit import api
+    from livekit.protocol.sip import CreateSIPOutboundTrunkRequest, SIPOutboundTrunkInfo
+
+    livekit_api = api.LiveKitAPI()
+    try:
+        trunk = SIPOutboundTrunkInfo(
+            name=payload.trunk_name,
+            address=payload.address,
+            numbers=payload.numbers,
+            auth_username=payload.auth_username,
+            auth_password=payload.auth_password,
+        )
+        response = await livekit_api.sip.create_sip_outbound_trunk(
+            CreateSIPOutboundTrunkRequest(trunk=trunk)
+        )
+        return {
+            "outbound_trunk_id": response.sip_trunk_id,
+            "name": response.name,
+            "address": response.address,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to create outbound trunk: {exc}")
+    finally:
+        await livekit_api.aclose()
+
+
 @router.get("/sip/bindings")
 def list_sip_bindings() -> list[dict[str, Any]]:
     """List all active SIP bindings."""

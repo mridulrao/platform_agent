@@ -32,12 +32,14 @@ class VVAPostCallInfo:
             "phone_number": self.phone_number if self.channel == "sip" else None,
         }
 
+        status = "transferred" if self.disconnect_reason == "assistant-forwarded-call" else "ended"
+
         try:
             await self.db_proxy.update_call(
                 self.call_id,
                 caller=self.phone_number if self.channel == "sip" else None,
                 channel=self.channel,
-                status="ended",
+                status=status,
                 ended_reason=self.disconnect_reason,
                 ended_at=datetime.now().astimezone(),
                 call_data=call_data,
