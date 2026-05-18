@@ -60,7 +60,24 @@ class MCPServerConfig(BaseModel):
     mcp_server_id: str
     name: str = ""
     allowed_tools: list[str] = Field(default_factory=list)
-    tools: list[dict[str, Any]] = Field(default_factory=list)  # Cached tool schemas
+    tools: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class VvaSkillConfig(BaseModel):
+    skill_id: str
+    name: str = ""
+    has_script: bool = False
+    script_name: str = ""
+    trigger_hint: str = ""
+    instructions: str = ""
+    mcp_bindings: dict[str, str] = Field(default_factory=dict)
+    datasets: list[str] = Field(default_factory=list)
+
+
+class VvaAutomationConfig(BaseModel):
+    agent_id: str
+    name: str = ""
+    trigger_hint: str = ""
 
 
 class AgentConfig(BaseModel):
@@ -76,6 +93,8 @@ class AgentConfig(BaseModel):
     session: SessionConfig = Field(default_factory=SessionConfig)
     datasets: list[DatasetConfig] = Field(default_factory=list)
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
+    vva_skills: list[VvaSkillConfig] = Field(default_factory=list)
+    vva_automations: list[VvaAutomationConfig] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod

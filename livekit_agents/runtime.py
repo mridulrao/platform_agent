@@ -138,6 +138,16 @@ async def run_agent_session(ctx: JobContext, config: AgentConfig) -> None:
         agent_name=config.name,
     )
     session_toolsets = load_skills(config.skills)
+
+    # Add VVA skill/automation toolset if skills or automations configured
+    vva_skills = [s.model_dump() if hasattr(s, "model_dump") else s for s in (config.vva_skills or [])] if hasattr(config, "vva_skills") and config.vva_skills else []
+    vva_automations = [a.model_dump() if hasattr(a, "model_dump") else a for a in (config.vva_automations or [])] if hasattr(config, "vva_automations") and config.vva_automations else []
+    if vva_skills or vva_automations:
+        from livekit_agents_tools.vva_skill_toolset import build_vva_skill_toolset
+        vva_toolset = build_vva_skill_toolset(skills=vva_skills, automations=vva_automations)
+        if vva_toolset:
+            session_toolsets.append(vva_toolset)
+
     session = AgentSession(userdata=session_info, tools=session_toolsets)
     session_info.register_conversation_listeners(session)
     observability = SessionObservability(

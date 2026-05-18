@@ -35,8 +35,13 @@ from livekit.agents import RunContext, function_tool
 logger = logging.getLogger("voice-agent-mcp-proxy")
 
 
-def _get_session_info(context: RunContext) -> Any:
-    return getattr(context.session, "userdata", None)
+def _get_session_info(context: Any) -> Any:
+    # Try different ways to get session userdata
+    if hasattr(context, "session") and hasattr(context.session, "userdata"):
+        return context.session.userdata
+    if hasattr(context, "userdata"):
+        return context.userdata
+    return None
 
 
 def _get_mcp_api_url() -> str:
@@ -86,7 +91,7 @@ async def _save_tool_event(context: RunContext, tool_name: str, arguments: dict,
             content_json={"tool_name": tool_name, "arguments": arguments, "result_ok": result.get("ok", False)},
         )
     except Exception as exc:
-        logger.debug("Failed to save tool event: %s", exc)
+        logger.warning("Failed to save tool event for %s: %s", tool_name, exc)
 
 
 async def _call_mcp_proxy(context: RunContext, mcp_server_id: str, tool_name: str, arguments: dict) -> dict:
