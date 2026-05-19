@@ -7,6 +7,8 @@ from livekit import api
 from livekit.protocol.sip import (
     CreateSIPDispatchRuleRequest,
     CreateSIPInboundTrunkRequest,
+    DeleteSIPTrunkRequest,
+    ListSIPInboundTrunkRequest,
     SIPDispatchRule,
     SIPDispatchRuleIndividual,
     SIPDispatchRuleInfo,
@@ -26,6 +28,17 @@ async def provision_inbound_sip_for_agent(
     resolved_dispatch_agent_name = dispatch_agent_name or agent_name
 
     try:
+        # Clean up any existing trunks for this phone number to avoid conflicts.
+        # Stale trunks can be left behind from failed previous provisioning attempts.
+        try:
+            existing_trunks = await livekit_api.sip.list_sip_inbound_trunk(ListSIPInboundTrunkRequest())
+            for trunk in existing_trunks.items:
+                if sip_config.phone_number in (trunk.numbers or []):
+                    logger.info("Deleting stale inbound trunk %s for number %s", trunk.sip_trunk_id, sip_config.phone_number)
+                    await livekit_api.sip.delete_sip_trunk(DeleteSIPTrunkRequest(sip_trunk_id=trunk.sip_trunk_id))
+        except Exception as cleanup_err:
+            logger.warning("Failed to clean up existing trunks: %s", cleanup_err)
+
         trunk_request = CreateSIPInboundTrunkRequest(
             trunk=SIPInboundTrunkInfo(
                 name=sip_config.trunk_friendly_name,
