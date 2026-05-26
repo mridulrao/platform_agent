@@ -29,6 +29,38 @@ def _get_session_info(context: RunContext) -> Any:
     return getattr(context.session, "userdata", None)
 
 
+async def _save_tool_event(context: RunContext, query: str, result: dict) -> None:
+    """Save RAG search as a transcript event via DB Proxy."""
+    try:
+        session_info = _get_session_info(context)
+        db_proxy = getattr(session_info, "db_proxy", None)
+        call_id = getattr(session_info, "call_id", None)
+        if not db_proxy or not call_id:
+            return
+
+        result_count = len(result.get("results", []))
+        ok = result.get("ok", False)
+        # Extract unique source documents from results
+        sources = list({r.get("source", "") for r in result.get("results", []) if r.get("source")})
+        content = f"Tool: search_knowledge_base"
+        if ok:
+            content = f"Tool: search_knowledge_base({query[:60]}) -> {result_count} results"
+            if sources:
+                content += f" from {', '.join(s for s in sources[:3])}"
+        else:
+            content = f"Tool: search_knowledge_base({query[:60]}) -> {result.get('message', 'failed')}"
+
+        await db_proxy.save_call_event(
+            call_id=call_id,
+            event_type="tool_call",
+            speaker="tool",
+            content_text=content,
+            content_json={"tool_name": "search_knowledge_base", "arguments": {"query": query}, "result_ok": ok, "result_count": result_count, "sources": sources},
+        )
+    except Exception as exc:
+        logger.warning("Failed to save RAG tool event: %s", exc)
+
+
 def _get_rag_api_url(session_info: Any) -> str:
     url = (
         getattr(session_info, "rag_api_url", None)
@@ -64,11 +96,9 @@ async def search_knowledge_base(
     datasets = _get_datasets(session_info)
 
     if not datasets:
-        return {
-            "ok": False,
-            "message": "No knowledge base datasets configured for this agent.",
-            "results": [],
-        }
+        err = {"ok": False, "message": "No knowledge base datasets configured for this agent.", "results": []}
+        await _save_tool_event(context, query, err)
+        return err
 
     rag_api_url = _get_rag_api_url(session_info)
     dataset_ids = [ds["dataset_id"] for ds in datasets]
@@ -136,7 +166,7 @@ async def search_knowledge_base(
         results.append({
             "text": r.get("chunk_text", r.get("text", "")),
             "score": round(r.get("similarity", r.get("score", 0)), 3),
-            "source": r.get("document_name", r.get("source", "")),
+            "source": r.get("document_filename", r.get("document_name", r.get("source", ""))),
             "page": r.get("start_page"),
         })
 
@@ -145,10 +175,12 @@ async def search_knowledge_base(
 
     logger.info("RAG search returned %d results for query: %s", len(results), query[:80])
 
-    return {
+    result = {
         "ok": True,
         "message": f"Found {len(results)} relevant results.",
         "results": results,
         "answer": answer,
         "query": query,
     }
+    await _save_tool_event(context, query, result)
+    return result
