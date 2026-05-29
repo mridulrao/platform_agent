@@ -29,6 +29,10 @@ class SessionConfig(BaseModel):
     kwargs: dict[str, Any] = Field(default_factory=dict)
     transfer_phone_number: str | None = None
     greeting_message: str | None = None
+    tool_call_filler_enabled: bool = True
+    tool_call_filler_exclude: list[str] = Field(
+        default_factory=lambda: ["end_call", "transfer_call"],
+    )
 
     @field_validator("transfer_phone_number")
     @classmethod
@@ -82,6 +86,7 @@ class VvaAutomationConfig(BaseModel):
 
 class AgentConfig(BaseModel):
     name: str = Field(..., min_length=1)
+    language: str = "en"
     system_prompt: str = Field(..., min_length=1)
     llm: ProviderConfig
     stt: ProviderConfig

@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import functools
 import importlib
 import logging
 import os
+import random
 from typing import Any
 
 from livekit import rtc
 from livekit.agents import AgentSession, AutoSubscribe, JobContext, JobProcess, RoomInputOptions
 from livekit.plugins import noise_cancellation
 
+from livekit.agents import RunContext
+from livekit.agents.llm.tool_context import FunctionTool
+
 from agent_config.schema import AgentConfig
-from livekit_agents.base_agent import BaseAgent
+from livekit_agents.base_agent import TOOL_CALL_FILLERS, BaseAgent
 from livekit_agents.factory import build_llm, build_stt, build_tts, build_vad
 from utils.observability import SessionObservability
 from utils.noise_cancelation.webrtc_ns_module import build_webrtc_noise_canceller
@@ -23,6 +28,46 @@ logger = logging.getLogger("configurable-livekit-agent")
 
 def prewarm(proc: JobProcess) -> None:
     proc.userdata["vad_ready"] = True
+
+
+def _wrap_tool_with_filler(
+    tool: FunctionTool,
+    filler_words: list[str],
+    exclude_tools: set[str] | None = None,
+) -> FunctionTool:
+    """Return a shallow copy of *tool* whose function says a filler before running.
+
+    A copy is created so module-level singletons are never mutated — each agent
+    instance gets its own wrapped version.
+    """
+    if exclude_tools and tool.info.name in exclude_tools:
+        return tool
+
+    original_func = tool._func
+
+    @functools.wraps(original_func)
+    async def _wrapped(*args, **kwargs):
+        # Find the RunContext argument to access the session
+        ctx = None
+        for arg in args:
+            if isinstance(arg, RunContext):
+                ctx = arg
+                break
+        if ctx is None:
+            for v in kwargs.values():
+                if isinstance(v, RunContext):
+                    ctx = v
+                    break
+
+        if ctx is not None:
+            filler = random.choice(filler_words)
+            ctx.session.say(filler, add_to_chat_ctx=False, allow_interruptions=True)
+
+        return await original_func(*args, **kwargs)
+
+    # Create a new FunctionTool instance instead of mutating the original
+    wrapped_tool = FunctionTool(_wrapped, tool.info)
+    return wrapped_tool
 
 
 def load_tools(tool_paths: list[str]) -> list[Any]:
@@ -109,8 +154,21 @@ class ConfigurableVoiceAgent(BaseAgent):
                 [s.model_dump() if hasattr(s, "model_dump") else s for s in config.mcp_servers]
             ))
 
+        # Wrap tools with filler phrases so the caller hears speech during execution.
+        # Fast / action tools (end_call, transfer_call) are excluded — a filler
+        # like "Give me a moment" before hanging up would sound odd.
+        if config.session.tool_call_filler_enabled:
+            filler_words = TOOL_CALL_FILLERS.get(config.language, TOOL_CALL_FILLERS["en"])
+            _no_filler_tools = set(config.session.tool_call_filler_exclude)
+            agent_tools = [
+                _wrap_tool_with_filler(t, filler_words, exclude_tools=_no_filler_tools)
+                if isinstance(t, FunctionTool) else t
+                for t in agent_tools
+            ]
+
         super().__init__(
             agent_name=config.name,
+            language=config.language,
             instructions=config.system_prompt,
             stt=build_stt(config),
             llm=build_llm(config),
