@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: default
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-agent-config
+  namespace: ${K8S_NAMESPACE}
+data:
+  AGENT_WORKER_IMAGE: "fpaiopsdev.azurecr.io/platform-agent-worker:latest"
+  DB_PROXY_URL: "http://platform-agent-service:8000"
+  K8S_NAMESPACE: "platform-vva-agent"
+  KUBECTL_BIN: "kubectl"
+  LIVEKIT_ROOM_PREFIX: "inbound"
+  LIVEKIT_HIDE_PHONE_NUMBER: "false"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: platform-agent-secrets
+  namespace: ${K8S_NAMESPACE}
+type: Opaque
+stringData:
+  LIVEKIT_URL: "wss://livekit.demo.futurepath.ai"
+  LIVEKIT_API_KEY: "sip_cec994366ce3"
+  LIVEKIT_API_SECRET: "MrSnNEQOV0EQl3HRE4A/XGrbbPXam6Mi4JSJFc9fmdO1+iWe"

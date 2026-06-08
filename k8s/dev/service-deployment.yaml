@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-agent-service
+  namespace: ${K8S_NAMESPACE}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-agent-service
+  template:
+    metadata:
+      labels:
+        app: platform-agent-service
+    spec:
+      serviceAccountName: platform-agent-service
+      containers:
+        - name: service
+          image: fpaiopsdev.azurecr.io/platform-agent-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8501
+              name: http
+            - containerPort: 8000
+              name: db-proxy
+          envFrom:
+            - configMapRef:
+                name: platform-agent-config
+            - secretRef:
+                name: platform-agent-secrets
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: deepagents-secrets
+                  key: database-url
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - curl -fsS http://127.0.0.1:8501/_stcore/health >/dev/null && curl -fsS http://127.0.0.1:8000/db-proxy/health >/dev/null
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - curl -fsS http://127.0.0.1:8501/_stcore/health >/dev/null && curl -fsS http://127.0.0.1:8000/db-proxy/health >/dev/null
+            initialDelaySeconds: 20
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-agent-service
+  namespace: ${K8S_NAMESPACE}
+spec:
+  selector:
+    app: platform-agent-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8501
+    - name: db-proxy
+      port: 8000
+      targetPort: 8000
