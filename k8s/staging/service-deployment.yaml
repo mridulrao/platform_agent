@@ -16,7 +16,7 @@ spec:
       serviceAccountName: platform-agent-service
       containers:
         - name: service
-          image: fpaiopsstaging.azurecr.io/platform-agent-service:latest
+          image: fpaiopsstaging.azurecr.io/platform-agent-service:v1.0.0
           imagePullPolicy: Always
           ports:
             - containerPort: 8501

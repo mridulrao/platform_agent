@@ -16,7 +16,7 @@ spec:
       serviceAccountName: platform-agent-service
       containers:
         - name: service
-          image: fpaiopsdev.azurecr.io/platform-agent-service:latest
+          image: fpaiopsdev.azurecr.io/platform-agent-service:v1.0.0
           imagePullPolicy: Always
           ports:
             - containerPort: 8501
@@ -32,7 +32,7 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: deepagents-secrets
+                  name: fpaiplatform-secrets
                   key: database-url
           readinessProbe:
             exec:

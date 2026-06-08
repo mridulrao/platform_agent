@@ -1,0 +1,56 @@
+---
+# VVA Deployment Reconciler
+# Polls for pending VVA deployment requests, resolves credentials,
+# and creates/updates K8s Deployments, Services, and Secrets for VVA workers.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vva-reconciler
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vva-reconciler
+  template:
+    metadata:
+      labels:
+        app: vva-reconciler
+    spec:
+      serviceAccountName: fpaiplatform-backend-sa
+      containers:
+      - name: reconciler
+        image: fpaiopsstaging.azurecr.io/fpaiplatform-backend:6e6dbe9
+        imagePullPolicy: Always
+        command: ["python", "run_vva_reconciler.py"]
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: fpaiplatform-secrets
+              key: database-url
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: fpaiplatform-secrets
+              key: encryption-key
+        - name: PLATFORM_AGENT_PROXY_URL
+          value: "http://platform-agent-service:8000"
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          exec:
+            command: ["python", "-c", "print('reconciler-ok')"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        startupProbe:
+          exec:
+            command: ["python", "-c", "print('reconciler-ok')"]
+          periodSeconds: 10
+          failureThreshold: 12
+      restartPolicy: Always
