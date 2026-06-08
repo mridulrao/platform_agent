@@ -17,7 +17,7 @@ spec:
       labels:
         app: vva-reconciler
     spec:
-      serviceAccountName: fpaiplatform-backend-sa
+      serviceAccountName: platform-agent-service
       containers:
       - name: reconciler
         image: fpaiopsstaging.azurecr.io/fpaiplatform-backend:6e6dbe9
@@ -36,6 +36,8 @@ spec:
               key: encryption-key
         - name: PLATFORM_AGENT_PROXY_URL
           value: "http://platform-agent-service:8000"
+        - name: AGENT_WORKER_IMAGE
+          value: "fpaiopsdev.azurecr.io/platform-agent-worker:latest"
         resources:
           requests:
             cpu: "250m"
