@@ -9,7 +9,7 @@ metadata:
   name: platform-agent-config
   namespace: default
 data:
-  AGENT_WORKER_IMAGE: "fpaiopsdev.azurecr.io/platform-agent-worker:latest"
+  AGENT_WORKER_IMAGE: "fpaiopsstaging.azurecr.io/platform-agent-worker:latest"
   DB_PROXY_URL: "http://platform-agent-service:8000"
   K8S_NAMESPACE: "default"
   KUBECTL_BIN: "kubectl"
