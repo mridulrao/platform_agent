@@ -20,7 +20,7 @@ spec:
       serviceAccountName: platform-agent-service
       containers:
       - name: reconciler
-        image: fpaiopsstaging.azurecr.io/fpaiplatform-backend:6e6dbe9
+        image: fpaiopsstaging.azurecr.io/fpaiplatform-backend:4aa522a
         imagePullPolicy: Always
         command: ["python", "run_vva_reconciler.py"]
         env:
@@ -38,6 +38,8 @@ spec:
           value: "http://platform-agent-service:8000"
         - name: AGENT_WORKER_IMAGE
           value: "fpaiopsdev.azurecr.io/platform-agent-worker:latest"
+        - name: K8S_NAMESPACE
+          value: "default"
         resources:
           requests:
             cpu: "250m"
