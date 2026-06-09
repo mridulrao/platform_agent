@@ -40,6 +40,10 @@ spec:
           value: "fpaiopsstaging.azurecr.io/platform-agent-worker:latest"
         - name: K8S_NAMESPACE
           value: "default"
+        - name: TECHOPS_RAG_API_URL
+          value: "http://fpaiplatform-backend:8000"
+        - name: TECHOPS_MCP_API_URL
+          value: "http://fpaiplatform-backend:8000"
         resources:
           requests:
             cpu: "250m"

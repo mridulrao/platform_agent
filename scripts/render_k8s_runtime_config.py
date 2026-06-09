@@ -43,7 +43,7 @@ def _quote(value: str) -> str:
 
 def render_runtime_config(env_file: Path) -> str:
     values = {k: v for k, v in dotenv_values(env_file).items() if v is not None}
-    namespace = values.get("K8S_NAMESPACE", "platform-agent")
+    namespace = values.get("K8S_NAMESPACE", "default")
     secret_lines = []
     for key in SECRET_KEYS:
         value = values.get(key)

@@ -15,7 +15,7 @@ if str(ROOT) not in sys.path:
 from agent_config.store import load_agent_config
 
 
-DEFAULT_K8S_NAMESPACE = "platform-agent"
+DEFAULT_K8S_NAMESPACE = "default"
 DEFAULT_DB_PROXY_URL = "http://platform-agent-service:8000"
 
 
