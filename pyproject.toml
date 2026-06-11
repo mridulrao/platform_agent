@@ -48,5 +48,6 @@ include = [
     "livekit_trunks*",
     "skill_jobs*",
     "scripts*",
+    "telephony*",
     "utils*",
 ]

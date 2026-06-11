@@ -32,6 +32,8 @@ from agent_config.store import (
 )
 from livekit_trunks.provision import provision_inbound_sip_for_agent
 from scripts.render_k8s_worker_manifest import render_manifest
+from telephony.livekit_sip import LiveKitSIPClient
+from telephony.vonage import VonageClient
 
 
 ROOT = Path(__file__).resolve().parent
@@ -182,7 +184,7 @@ def _build_worker_deployment_spec(agent_name: str, namespace: str, image: str) -
                         client.V1Container(
                             name="worker",
                             image=image,
-                            image_pull_policy="IfNotPresent",
+                            image_pull_policy="Always",
                             ports=[client.V1ContainerPort(container_port=port, name="health")],
                             env=[
                                 client.V1EnvVar(name="TARGET_AGENT_NAME", value=agent_name),
@@ -647,6 +649,286 @@ def provision_sip_backend(agent_name: str, sip_config: SIPProvisionConfig) -> di
         )
 
     return result
+
+
+def search_vonage_numbers_backend(
+    *,
+    country: str,
+    number_type: str | None = None,
+    features: list[str] | None = None,
+    pattern: str | None = None,
+    search_pattern: int | None = None,
+    size: int = 20,
+) -> list[dict[str, object]]:
+    client = VonageClient()
+    results = client.search_available_numbers(
+        country=country,
+        number_type=number_type,
+        features=features,
+        pattern=pattern,
+        search_pattern=search_pattern,
+        size=size,
+    )
+    return [number.to_dict() for number in results]
+
+
+def list_vonage_numbers_backend() -> list[dict[str, object]]:
+    client = VonageClient()
+    return [number.to_dict() for number in client.list_owned_numbers()]
+
+
+def buy_vonage_number_backend(*, country: str, msisdn: str) -> dict[str, object]:
+    client = VonageClient()
+    result = client.buy_number(country=country, msisdn=msisdn)
+    return {
+        "country": country.upper(),
+        "msisdn": _normalize_msisdn(msisdn),
+        "e164": _to_e164(msisdn),
+        "provider": "vonage",
+        "purchase_result": result,
+    }
+
+
+def bind_vonage_number_to_agent_backend(
+    *,
+    agent_name: str,
+    country: str,
+    msisdn: str,
+    sip_config: SIPProvisionConfig,
+    livekit_sip_uri: str | None = None,
+) -> dict[str, object]:
+    client = VonageClient()
+    sip_uri = _resolve_livekit_sip_uri(livekit_sip_uri)
+    provision_result = provision_sip_backend(agent_name, sip_config)
+    update_result = client.update_number(
+        country=country,
+        msisdn=msisdn,
+        voice_callback_type="sip",
+        voice_callback_value=sip_uri,
+        app_id=os.getenv("VONAGE_APPLICATION_ID") or None,
+        voice_status_callback=os.getenv("VONAGE_VOICE_STATUS_CALLBACK_URL") or None,
+    )
+    return {
+        "provider": "vonage",
+        "country": country.upper(),
+        "msisdn": _normalize_msisdn(msisdn),
+        "e164": _to_e164(msisdn),
+        "voice_callback_type": "sip",
+        "voice_callback_value": sip_uri,
+        "sip_provision_result": provision_result,
+        "vonage_update_result": update_result,
+    }
+
+
+def buy_and_bind_vonage_number_backend(
+    *,
+    agent_name: str,
+    country: str,
+    msisdn: str,
+    sip_config: SIPProvisionConfig,
+    livekit_sip_uri: str | None = None,
+) -> dict[str, object]:
+    purchase_result = buy_vonage_number_backend(country=country, msisdn=msisdn)
+    bind_result = bind_vonage_number_to_agent_backend(
+        agent_name=agent_name,
+        country=country,
+        msisdn=msisdn,
+        sip_config=sip_config,
+        livekit_sip_uri=livekit_sip_uri,
+    )
+    return {
+        "provider": "vonage",
+        "purchase_result": purchase_result,
+        "bind_result": bind_result,
+    }
+
+
+def livekit_sip_health_backend(base_url: str | None = None) -> dict[str, object]:
+    client = LiveKitSIPClient(base_url=base_url)
+    return client.health()
+
+
+def livekit_sip_config_backend(base_url: str | None = None) -> dict[str, object]:
+    client = LiveKitSIPClient(base_url=base_url)
+    return client.config()
+
+
+def livekit_sip_inventory_backend(base_url: str | None = None) -> dict[str, object]:
+    client = LiveKitSIPClient(base_url=base_url)
+    inbound = client.list_inbound_trunks()
+    outbound = client.list_outbound_trunks()
+    dispatch_rules = client.list_dispatch_rules()
+    summary = _build_livekit_sip_bindings(
+        inbound_items=list(inbound.get("items") or []),
+        outbound_items=list(outbound.get("items") or []),
+        dispatch_items=list(dispatch_rules.get("items") or []),
+    )
+    return {
+        "inbound_trunks": inbound,
+        "outbound_trunks": outbound,
+        "dispatch_rules": dispatch_rules,
+        "bindings": summary,
+    }
+
+
+def livekit_agents_summary_backend(base_url: str | None = None) -> dict[str, object]:
+    client = LiveKitSIPClient(base_url=base_url)
+    return client.agents_summary()
+
+
+def livekit_rooms_backend(base_url: str | None = None) -> dict[str, object]:
+    client = LiveKitSIPClient(base_url=base_url)
+    return client.list_rooms()
+
+
+def livekit_room_participants_backend(room_name: str, base_url: str | None = None) -> dict[str, object]:
+    client = LiveKitSIPClient(base_url=base_url)
+    return client.list_room_participants(room_name)
+
+
+def livekit_room_dispatches_backend(room_name: str, base_url: str | None = None) -> dict[str, object]:
+    client = LiveKitSIPClient(base_url=base_url)
+    return client.list_room_dispatches(room_name)
+
+
+def delete_livekit_sip_trunk_backend(
+    trunk_id: str,
+    dispatch_rule_id: str | None = None,
+    *,
+    base_url: str | None = None,
+    delete_linked_dispatch_rule: bool = False,
+) -> dict[str, object]:
+    client = LiveKitSIPClient(base_url=base_url)
+    if delete_linked_dispatch_rule and dispatch_rule_id:
+        return client.delete_provisioning(trunk_id=trunk_id, dispatch_rule_id=dispatch_rule_id)
+    return client.delete_trunk(trunk_id)
+
+
+def delete_livekit_dispatch_rule_backend(rule_id: str, *, base_url: str | None = None) -> dict[str, object]:
+    client = LiveKitSIPClient(base_url=base_url)
+    return client.delete_dispatch_rule(rule_id)
+
+
+def update_livekit_inbound_trunk_backend(
+    trunk_id: str, payload: dict[str, object], *, base_url: str | None = None
+) -> dict[str, object]:
+    client = LiveKitSIPClient(base_url=base_url)
+    return client.update_inbound_trunk(trunk_id=trunk_id, payload=payload)
+
+
+def update_livekit_outbound_trunk_backend(
+    trunk_id: str, payload: dict[str, object], *, base_url: str | None = None
+) -> dict[str, object]:
+    client = LiveKitSIPClient(base_url=base_url)
+    return client.update_outbound_trunk(trunk_id=trunk_id, payload=payload)
+
+
+def update_livekit_dispatch_rule_backend(
+    rule_id: str, payload: dict[str, object], *, base_url: str | None = None
+) -> dict[str, object]:
+    client = LiveKitSIPClient(base_url=base_url)
+    return client.update_dispatch_rule(rule_id=rule_id, payload=payload)
+
+
+def _normalize_msisdn(msisdn: str) -> str:
+    value = msisdn.strip()
+    if value.startswith("+"):
+        value = value[1:]
+    if not value.isdigit():
+        raise ValueError("Phone number must contain digits only, optionally prefixed with '+'.")
+    return value
+
+
+def _to_e164(msisdn: str) -> str:
+    return f"+{_normalize_msisdn(msisdn)}"
+
+
+def _resolve_livekit_sip_uri(override: str | None = None) -> str:
+    raw = (
+        (override or "").strip()
+        or os.getenv("LIVEKIT_SIP_URI", "").strip()
+        or os.getenv("LIVEKIT_SIP_ADDRESS", "").strip()
+    )
+    if not raw:
+        raise ValueError(
+            "LiveKit SIP URI is missing. Provide it in the UI or set LIVEKIT_SIP_URI/LIVEKIT_SIP_ADDRESS."
+        )
+    if raw.startswith("sip:"):
+        return raw
+    return f"sip:{raw}"
+
+
+def _build_livekit_sip_bindings(
+    *, inbound_items: list[dict[str, object]], outbound_items: list[dict[str, object]], dispatch_items: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    trunk_index: dict[str, dict[str, object]] = {}
+    for trunk in inbound_items:
+        trunk_id = str(trunk.get("sip_trunk_id") or "")
+        if trunk_id:
+            trunk_index[trunk_id] = {"kind": "inbound", **trunk}
+    for trunk in outbound_items:
+        trunk_id = str(trunk.get("sip_trunk_id") or "")
+        if trunk_id:
+            trunk_index[trunk_id] = {"kind": "outbound", **trunk}
+
+    bindings: list[dict[str, object]] = []
+    for rule in dispatch_items:
+        rule_id = str(rule.get("sip_dispatch_rule_id") or "")
+        trunk_ids = [str(item) for item in (rule.get("trunk_ids") or []) if str(item).strip()]
+        agents = list((((rule.get("room_config") or {}).get("agents")) or []))  # type: ignore[union-attr]
+        agent_names = [str(agent.get("agent_name") or "") for agent in agents if str(agent.get("agent_name") or "").strip()]
+        room_prefix = (((rule.get("rule") or {}).get("dispatch_rule_individual")) or {}).get("room_prefix")  # type: ignore[union-attr]
+
+        if trunk_ids:
+            for trunk_id in trunk_ids:
+                trunk = trunk_index.get(trunk_id, {})
+                bindings.append(
+                    {
+                        "trunk_id": trunk_id,
+                        "trunk_name": trunk.get("name"),
+                        "trunk_kind": trunk.get("kind"),
+                        "phone_numbers": ", ".join((trunk.get("numbers") or [])) if trunk else "",
+                        "dispatch_rule_id": rule_id,
+                        "dispatch_rule_name": rule.get("name"),
+                        "room_prefix": room_prefix,
+                        "agent_names": ", ".join(agent_names),
+                        "hide_phone_number": rule.get("hide_phone_number"),
+                    }
+                )
+        else:
+            bindings.append(
+                {
+                    "trunk_id": "",
+                    "trunk_name": "",
+                    "trunk_kind": "",
+                    "phone_numbers": "",
+                    "dispatch_rule_id": rule_id,
+                    "dispatch_rule_name": rule.get("name"),
+                    "room_prefix": room_prefix,
+                    "agent_names": ", ".join(agent_names),
+                    "hide_phone_number": rule.get("hide_phone_number"),
+                }
+            )
+
+    known_trunk_ids = {str(binding.get("trunk_id") or "") for binding in bindings if str(binding.get("trunk_id") or "")}
+    for trunk_id, trunk in trunk_index.items():
+        if trunk_id in known_trunk_ids:
+            continue
+        bindings.append(
+            {
+                "trunk_id": trunk_id,
+                "trunk_name": trunk.get("name"),
+                "trunk_kind": trunk.get("kind"),
+                "phone_numbers": ", ".join((trunk.get("numbers") or [])),
+                "dispatch_rule_id": "",
+                "dispatch_rule_name": "",
+                "room_prefix": "",
+                "agent_names": "",
+                "hide_phone_number": None,
+            }
+        )
+
+    return bindings
 
 
 def get_kubernetes_agent_status_backend(agent_name: str) -> KubernetesAgentStatusResult:

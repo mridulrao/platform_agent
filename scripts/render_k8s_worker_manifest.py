@@ -44,7 +44,7 @@ spec:
       containers:
         - name: worker
           image: {image}
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: {port}
               name: health
